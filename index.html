@@ -77,7 +77,8 @@
             Download as LucideDownload, 
             Upload as LucideUpload,
             PenLine as LucidePenLine,
-            Eraser as LucideEraser
+            Eraser as LucideEraser,
+            AlertTriangle as LucideAlertTriangle
         } from 'lucide-react';
 
         // --- LOCAL OCR SERVICE (Tesseract.js) ---
@@ -259,6 +260,7 @@
             const [scanTicketId, setScanTicketId] = useState(null);
             const [recentlyViewedId, setRecentlyViewedId] = useState(null);
             const [showBackupModal, setShowBackupModal] = useState(false);
+            const [showDeleteConfirm, setShowDeleteConfirm] = useState(false); // New: Modal state
             const [draftTicketId, setDraftTicketId] = useState(null);
             
             const fileInputRef = useRef(null);
@@ -300,16 +302,11 @@
                     console.error("Storage Error:", e);
                     // Check if quota exceeded
                     if (e.name === 'QuotaExceededError' || e.message.includes('quota')) {
-                        // Strategy: Find the most recent ticket and remove its image, then try again
-                        // This prevents the "White Screen" or crash loop
                         alert('注意：手機儲存空間已滿！這張票券將僅儲存文字，不儲存截圖以節省空間。請刪除部分舊票券以釋放空間。');
-                        
                         setTickets(prev => {
-                            // Deep copy to avoid mutating state directly
                             const newTickets = [...prev];
-                            // Find the latest ticket (usually index 0) and remove image
                             if (newTickets.length > 0 && newTickets[0].imageUrl) {
-                                newTickets[0].imageUrl = ''; // Remove image
+                                newTickets[0].imageUrl = ''; 
                                 newTickets[0].notes += ' (因儲存空間不足，系統自動移除了圖片)';
                             }
                             return newTickets;
@@ -377,7 +374,6 @@
                     reader.onload = async (e) => {
                         const result = e.target?.result;
                         
-                        // Use a promise to handle Image loading safely
                         const processImage = () => new Promise((resolve, reject) => {
                             const img = new Image();
                             img.onload = () => resolve(img);
@@ -389,7 +385,6 @@
                             const img = await processImage();
                             const canvas = document.createElement('canvas');
                             
-                            // --- OPTIMIZATION: Reduce Resolution ---
                             const MAX_WIDTH = 720; 
                             const scale = MAX_WIDTH / img.width;
                             canvas.width = MAX_WIDTH;
@@ -398,14 +393,12 @@
                             const ctx = canvas.getContext('2d');
                             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
                             
-                            // --- OPTIMIZATION: Reduce Quality ---
                             const resizedBase64 = canvas.toDataURL('image/jpeg', 0.5);
                             
-                            // Free up memory immediately
                             ctx.clearRect(0, 0, canvas.width, canvas.height);
                             
                             setUploadStatus('本地辨識初始化...');
-                            await new Promise(r => setTimeout(r, 50)); // Give UI a breath
+                            await new Promise(r => setTimeout(r, 50));
 
                             setUploadStatus('OCR 文字解析中...');
                             const data = await extractTicketDataLocal(resizedBase64);
@@ -422,7 +415,8 @@
                                 isUsed: false,
                                 createdAt: Date.now(),
                                 notes: data.rawText || '',
-                                isNoExpiry: false 
+                                isNoExpiry: false,
+                                usedAt: undefined // Initialize usedAt
                             };
                             setTickets(prev => [newTicket, ...prev]); 
                             setDetailsTicketId(newTicket.id);
@@ -440,7 +434,6 @@
                     setError('讀取檔案失敗');
                     setIsUploading(false);
                 }
-                // Clear input immediately to allow re-selection
                 if (fileInputRef.current) fileInputRef.current.value = '';
             };
 
@@ -455,7 +448,8 @@
                     isUsed: false,
                     createdAt: Date.now(),
                     notes: '',
-                    isNoExpiry: false
+                    isNoExpiry: false,
+                    usedAt: undefined
                 };
                 setTickets(prev => [newTicket, ...prev]);
                 setDetailsTicketId(newTicket.id); 
@@ -474,9 +468,20 @@
                 setDetailsTicketId(null);
             };
 
+            // UPDATE: handleToggleUsed to record timestamp
             const handleToggleUsed = (id) => {
                 setRecentlyViewedId(null); 
-                setTickets(prev => prev.map(t => t.id === id ? { ...t, isUsed: !t.isUsed } : t));
+                setTickets(prev => prev.map(t => {
+                    if (t.id === id) {
+                        const newIsUsed = !t.isUsed;
+                        return {
+                            ...t,
+                            isUsed: newIsUsed,
+                            usedAt: newIsUsed ? Date.now() : undefined // Set timestamp when marked used
+                        };
+                    }
+                    return t;
+                }));
             };
 
             const deleteTicket = (id) => {
@@ -486,6 +491,26 @@
                     setDetailsTicketId(null);
                     if (id === draftTicketId) setDraftTicketId(null);
                 }
+            };
+
+            // NEW: Open Confirm Modal
+            const handleDeleteAllClick = () => {
+                if (activeTab === 'available') return;
+                setShowDeleteConfirm(true);
+            };
+
+            // NEW: Actual Delete Logic
+            const confirmDeleteAll = () => {
+                setTickets(prev => {
+                    if (activeTab === 'used') {
+                        return prev.filter(t => !t.isUsed);
+                    } else if (activeTab === 'expired') {
+                        return prev.filter(t => !checkIsExpired(t.expiryDate, t.isNoExpiry) || t.isUsed);
+                    }
+                    return prev;
+                });
+                setRecentlyViewedId(null);
+                setShowDeleteConfirm(false);
             };
 
             const updateTicketField = (id, field, value) => {
@@ -519,6 +544,7 @@
                 setSearchQuery(val);
             };
 
+            // UPDATE: Sorting logic
             const filteredTickets = useMemo(() => {
                 const query = searchQuery.toLowerCase();
                 const queryFiltered = tickets.filter(t => 
@@ -534,6 +560,18 @@
                     if (activeTab === 'expired') return !t.isUsed && isExpired;
                     return true;
                 }).sort((a, b) => {
+                    // Custom sort for Used tab
+                    if (activeTab === 'used') {
+                        // Sort by usedAt desc (newest first). 
+                        const timeA = a.usedAt || 0;
+                        const timeB = b.usedAt || 0;
+                        if (timeA === 0 && timeB === 0) {
+                             return a.expiryDate.localeCompare(b.expiryDate);
+                        }
+                        return timeB - timeA;
+                    }
+
+                    // Default sort for Available/Expired
                     if (a.isNoExpiry && b.isNoExpiry) return 0;
                     if (a.isNoExpiry) return 1; 
                     if (b.isNoExpiry) return -1; 
@@ -602,7 +640,8 @@
                             </div>
                         </header>
 
-                        <main className="px-6 pt-6 flex-grow pb-24">
+                        {/* Updated pb to prevent FAB overlap */}
+                        <main className="px-6 pt-6 flex-grow pb-36">
                             {error && (
                                 <div className="mb-6 p-4 bg-red-50 border border-red-100 text-red-800 text-xs rounded-lg flex items-start gap-2">
                                     <LucideX size={14} className="mt-0.5 flex-shrink-0" />
@@ -646,7 +685,53 @@
                                     {activeTab === 'available' && <p className="text-stone-300 text-xs mt-2">點擊下方按鈕新增</p>}
                                 </div>
                             )}
+
+                            {/* DELETE ALL BUTTON */}
+                            {filteredTickets.length > 0 && activeTab !== 'available' && (
+                                <div className="mt-8 mb-4 text-center">
+                                    <button 
+                                        onClick={handleDeleteAllClick}
+                                        className="text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-4 py-2 rounded-full transition-colors flex items-center justify-center gap-1 mx-auto border border-transparent hover:border-red-100"
+                                    >
+                                        <LucideTrash2 size={14} />
+                                        <span>一鍵清空{activeTab === 'used' ? '已使用' : '已過期'}項目</span>
+                                    </button>
+                                </div>
+                            )}
+
                         </main>
+
+                        {/* DELETE ALL CONFIRMATION MODAL */}
+                        {showDeleteConfirm && (
+                            <div className="fixed inset-0 z-[80] flex items-center justify-center bg-stone-900/60 backdrop-blur-sm p-6" onClick={() => setShowDeleteConfirm(false)}>
+                                <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+                                    <div className="p-6 text-center">
+                                        <div className="w-12 h-12 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                                            <LucideAlertTriangle className="text-red-500" size={24} />
+                                        </div>
+                                        <h3 className="text-lg font-bold text-stone-800 mb-2">確認清空</h3>
+                                        <p className="text-stone-500 text-sm mb-6">
+                                            您確定要清空所有【{activeTab === 'used' ? '已使用' : '已過期'}】的票券嗎？<br/>
+                                            此動作<span className="text-red-500 font-bold">無法復原</span>。
+                                        </p>
+                                        <div className="flex gap-3">
+                                            <button 
+                                                onClick={() => setShowDeleteConfirm(false)}
+                                                className="flex-1 py-3 rounded-xl bg-stone-100 text-stone-600 font-medium text-sm transition-colors hover:bg-stone-200"
+                                            >
+                                                取消
+                                            </button>
+                                            <button 
+                                                onClick={confirmDeleteAll}
+                                                className="flex-1 py-3 rounded-xl bg-red-500 text-white font-medium text-sm transition-colors hover:bg-red-600 shadow-lg shadow-red-200"
+                                            >
+                                                確定清空
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         {/* Modals remain largely same but simplified here for brevity - assume standard structure */}
                         {scanTicket && (
@@ -795,7 +880,7 @@
                                         <div className="w-full h-px bg-stone-100"></div>
                                         
                                         <div className="text-center">
-                                            <p className="text-[10px] text-stone-300 font-mono tracking-widest">V2.0 (Local)</p>
+                                            <p className="text-[10px] text-stone-300 font-mono tracking-widest">V2.2 (Local)</p>
                                         </div>
                                     </div>
                                     <input type="file" ref={importFileRef} onChange={handleImportFileChange} accept=".json" className="hidden" />

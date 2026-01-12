@@ -1,5 +1,5 @@
-// 🔥 1. 這裡改成 v3，強迫手機更新
-const CACHE_NAME = 'flower-money-v3';
+// 🔥 1. 這裡改成 v4，強迫手機更新
+const CACHE_NAME = 'flower-money-v4';
 
 // 安裝階段 (Install)
 self.addEventListener('install', (e) => {
