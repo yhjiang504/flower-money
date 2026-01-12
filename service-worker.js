@@ -1,28 +1,44 @@
-const CACHE_NAME = 'flower-money-v2';
+// 🔥 1. 這裡改成 v3，強迫手機更新
+const CACHE_NAME = 'flower-money-v3';
 
-// 第一次安裝時，先把核心檔案存起來
+// 安裝階段 (Install)
 self.addEventListener('install', (e) => {
+  // 🔥 2. 強制插隊：讓這個新 Service Worker 立刻進入等待狀態，不用等舊的停止
+  self.skipWaiting(); 
+  
   e.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      // 這裡加上 './' 代表存首頁，其他的它會自動抓
       return cache.addAll(['./', './index.html', './icon.png']);
     })
   );
 });
 
-// 當你打開 App 時
+// 啟動階段 (Activate) - 🔥 3. 這是你原本缺少的「大掃除」功能
+self.addEventListener('activate', (e) => {
+  e.waitUntil(
+    caches.keys().then((keyList) => {
+      return Promise.all(keyList.map((key) => {
+        // 如果這個快取的名字不是現在的版本 (v3)，就把它刪掉！
+        if (key !== CACHE_NAME) {
+          console.log('刪除舊快取:', key);
+          return caches.delete(key);
+        }
+      }));
+    })
+  );
+  // 讓新版 Service Worker 立刻接管所有頁面
+  return self.clients.claim();
+});
+
+// 抓取階段 (Fetch) - 這部分保持不變
 self.addEventListener('fetch', (e) => {
   e.respondWith(
     (async () => {
-      // 1. 先去看看快取(Cache)裡面有沒有這個檔案？
       const r = await caches.match(e.request);
-      if (r) { return r; } // 有的話直接用，不用連網
-
-      // 2. 如果沒有，就去網路下載
+      if (r) { return r; }
+      
       const response = await fetch(e.request);
       const cache = await caches.open(CACHE_NAME);
-      
-      // 3. 下載下來的東西，順便存一份到快取，下次就不用下載了
       cache.put(e.request, response.clone());
       return response;
     })()
