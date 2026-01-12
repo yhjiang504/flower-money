@@ -1,17 +1,33 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>花花的小金庫 - E-Ticket Wallet</title>
     
-    <!-- Tailwind CSS -->
+    <link rel="apple-touch-icon" href="icon.png">
+    
+    <link rel="manifest" href="manifest.json">
+    
+    <meta name="apple-mobile-web-app-title" content="花花小金庫">
+    
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <script>
+      if ('serviceWorker' in navigator) {
+        // 等網頁載入完成後，註冊 service-worker.js
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('service-worker.js')
+            .then(reg => console.log('SW 註冊成功!', reg.scope))
+            .catch(err => console.log('SW 註冊失敗:', err));
+        });
+      }
+    </script>
+    
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- Tesseract.js for OCR -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
-    <!-- React & ReactDOM & Babel -->
     <script type="importmap">
         {
             "imports": {
