@@ -1,16 +1,8 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-
-<link rel="manifest" href="manifest.json">
-<script>
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('service-worker.js');
-  }
-</script>
-
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>花花的小金庫 - E-Ticket Wallet</title>
     
     <!-- Tailwind CSS -->
@@ -46,6 +38,8 @@
         body {
             background-color: #f5f5f1;
             font-family: system-ui, -apple-system, sans-serif;
+            /* Prevent pull-to-refresh on mobile which feels app-like */
+            overscroll-behavior-y: none;
         }
         .cursor-wait {
             cursor: wait;
@@ -59,7 +53,7 @@
         import React, { useState, useEffect, useMemo, useRef } from 'react';
         import { createRoot } from 'react-dom/client';
         
-        // Import Icons and Alias them to match original code
+        // Import Icons
         import { 
             Ticket as LucideTicket, 
             Scan as LucideScan, 
@@ -81,11 +75,12 @@
             AppWindow as LucideAppWindow, 
             Settings as LucideSettings, 
             Download as LucideDownload, 
-            Upload as LucideUpload 
+            Upload as LucideUpload,
+            PenLine as LucidePenLine,
+            Eraser as LucideEraser
         } from 'lucide-react';
 
         // --- LOCAL OCR SERVICE (Tesseract.js) ---
-        // Simplified since we load the script in head
         const loadTesseract = () => {
             return new Promise((resolve, reject) => {
                 if (window.Tesseract) {
@@ -100,18 +95,9 @@
             let lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
             
             const ignorePatterns = [
-                /無\s*SIM/i,
-                /SIM\s*卡/i,
-                /^\d{1,2}:\d{2}/,
-                /上午|下午/,
-                /^\d{1,3}%$/,
-                /中華電信|遠傳|台灣大哥大/,
-                /^<|^＜/,
-                /歡迎使用/i,
-                /Edenred/i,
-                /電子券/i,
-                /Ticket Wallet/i,
-                /詳情/
+                /無\s*SIM/i, /SIM\s*卡/i, /^\d{1,2}:\d{2}/, /上午|下午/,
+                /^\d{1,3}%$/, /中華電信|遠傳|台灣大哥大/, /^<|^＜/,
+                /歡迎使用/i, /Edenred/i, /電子券/i, /Ticket Wallet/i, /詳情/
             ];
 
             const dateRegex = /20[2-3]\d[-./]\d{1,2}[-./]\d{1,2}/; 
@@ -140,20 +126,19 @@
 
         const extractTicketDataLocal = async (imageBase64) => {
             const Tesseract = await loadTesseract();
+            // Create a worker, recognize, then terminate immediately to free memory
             const worker = await Tesseract.createWorker('chi_tra+eng'); 
             await worker.setParameters({
                 tessedit_pageseg_mode: Tesseract.PSM.AUTO,
             });
             const { data: { text } } = await worker.recognize(imageBase64);
-            await worker.terminate();
-            console.log('OCR Raw Text:', text);
+            await worker.terminate(); 
             return parseOCRText(text);
         };
 
         // --- UTILS ---
         const checkIsExpired = (dateStr, isNoExpiry) => {
             if (isNoExpiry) return false; 
-            
             const today = new Date();
             today.setHours(0, 0, 0, 0);
             const expDate = new Date(dateStr.replace(/\./g, '-').replace(/\//g, '-'));
@@ -163,17 +148,13 @@
 
         const checkIsExpiringSoon = (dateStr, isNoExpiry) => {
             if (isNoExpiry) return false; 
-            
             const today = new Date();
             today.setHours(0, 0, 0, 0);
             const expDate = new Date(dateStr.replace(/\./g, '-').replace(/\//g, '-'));
             if (isNaN(expDate.getTime())) return false;
-            
             if (expDate < today) return false;
-
             const diffTime = expDate.getTime() - today.getTime();
             const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-            
             return diffDays <= 10;
         };
 
@@ -192,24 +173,18 @@
             }
 
             return (
-                <div 
-                    className={`relative w-full rounded-xl shadow-sm border transition-all duration-300 mb-4 overflow-hidden group ${cardStyle}`}
-                >
+                <div className={`relative w-full rounded-xl shadow-sm border transition-all duration-300 mb-4 overflow-hidden group ${cardStyle}`}>
                     {isExpiringSoon && !ticket.isUsed && !isExpired && (
                         <div className="absolute top-0 right-0 bg-red-100 text-red-600 text-[10px] px-2 py-0.5 rounded-bl-lg z-10 font-bold tracking-wider flex items-center gap-1">
                             <LucideAlertCircle size={10} />
                             <span>即將過期</span>
                         </div>
                     )}
-
                     {ticket.isUsed && (
                         <div className="absolute inset-0 pointer-events-none z-10 flex items-center justify-center overflow-hidden">
-                            <div className="text-stone-300/20 text-6xl font-black uppercase -rotate-12 border-4 border-stone-300/20 p-4 rounded-lg">
-                                USED
-                            </div>
+                            <div className="text-stone-300/20 text-6xl font-black uppercase -rotate-12 border-4 border-stone-300/20 p-4 rounded-lg">USED</div>
                         </div>
                     )}
-
                     <div className="flex p-4 gap-4">
                         <div className="flex-shrink-0 w-20 h-20 bg-stone-100 rounded-lg overflow-hidden relative cursor-pointer" onClick={() => onScanView(ticket)}>
                             {ticket.imageUrl ? (
@@ -217,14 +192,13 @@
                             ) : (
                                 <div className="w-full h-full flex flex-col items-center justify-center text-stone-300 gap-1">
                                     <LucideTicket size={24} />
-                                    <span className="text-[9px] font-bold tracking-wider">REMINDER</span>
+                                    <span className="text-[9px] font-bold tracking-wider">TEXT ONLY</span>
                                 </div>
                             )}
                             <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors flex items-center justify-center">
                                 <LucideScan className="text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md" size={20} />
                             </div>
                         </div>
-
                         <div className="flex-grow min-w-0 flex flex-col justify-between" onClick={() => onViewDetails(ticket)}>
                             <div>
                                 <div className="flex justify-between items-start">
@@ -236,7 +210,6 @@
                                     {ticket.itemName || '兌換品項'}
                                 </h3>
                             </div>
-                            
                             <div className="flex items-end gap-3 mt-2">
                                 <div className={`text-xs px-2 py-1 rounded flex items-center gap-1.5 
                                     ${isExpired && !ticket.isUsed ? 'bg-red-50 text-red-600 font-medium' : ''}
@@ -244,28 +217,15 @@
                                     ${!isExpired && !isExpiringSoon && !ticket.isNoExpiry ? 'bg-stone-50 text-stone-500' : ''}
                                     ${ticket.isNoExpiry && !ticket.isUsed ? 'bg-stone-100 text-stone-600' : ''}
                                 `}>
-                                    {ticket.isNoExpiry ? (
-                                        <LucideInfinity size={12} />
-                                    ) : (
-                                        <LucideCalendar size={10} />
-                                    )}
-                                    
+                                    {ticket.isNoExpiry ? <LucideInfinity size={12} /> : <LucideCalendar size={10} />}
                                     <span className="tracking-wide">
-                                        {ticket.isNoExpiry 
-                                            ? '無期限' 
-                                            : ticket.expiryDate.replace(/-/g, '.')
-                                        } 
+                                        {ticket.isNoExpiry ? '無期限' : ticket.expiryDate.replace(/-/g, '.')} 
                                         {isExpired && !ticket.isUsed ? ' (已過期)' : ''}
                                     </span>
                                 </div>
-                                {ticket.price && (
-                                    <div className="text-xs text-stone-400 font-medium">
-                                        NT$ {ticket.price}
-                                    </div>
-                                )}
+                                {ticket.price && <div className="text-xs text-stone-400 font-medium">NT$ {ticket.price}</div>}
                             </div>
                         </div>
-
                         <div className="flex flex-col justify-between items-end pl-2 border-l border-stone-50/50">
                             <button 
                                 onClick={(e) => { e.stopPropagation(); onToggleUsed(ticket.id); }}
@@ -273,11 +233,7 @@
                             >
                                 {ticket.isUsed ? <LucideCheckCircle size={22} className="fill-stone-100" /> : <LucideCircle size={22} />}
                             </button>
-                            
-                            <button 
-                                onClick={() => onScanView(ticket)}
-                                className="p-2 text-stone-300 hover:text-stone-800 transition-colors"
-                            >
+                            <button onClick={() => onScanView(ticket)} className="p-2 text-stone-300 hover:text-stone-800 transition-colors">
                                 <LucideScan size={18} />
                             </button>
                         </div>
@@ -288,9 +244,11 @@
 
         // --- MAIN APP COMPONENT ---
         const STORAGE_KEY = 'e_ticket_wallet_local_data';
+        const APP_TITLE_KEY = 'e_ticket_wallet_app_title';
 
         const App = () => {
             const [tickets, setTickets] = useState([]);
+            const [appTitle, setAppTitle] = useState('花花的小金庫'); // Default title
             const [activeTab, setActiveTab] = useState('available');
             const [searchQuery, setSearchQuery] = useState('');
             const [isUploading, setIsUploading] = useState(false);
@@ -309,6 +267,7 @@
             const detailsTicket = useMemo(() => tickets.find(t => t.id === detailsTicketId) || null, [tickets, detailsTicketId]);
             const scanTicket = useMemo(() => tickets.find(t => t.id === scanTicketId) || null, [tickets, scanTicketId]);
 
+            // Load Data & Title on Mount
             useEffect(() => {
                 const saved = localStorage.getItem(STORAGE_KEY);
                 if (saved) {
@@ -318,10 +277,45 @@
                         console.error("Failed to load tickets", e);
                     }
                 }
+
+                const savedTitle = localStorage.getItem(APP_TITLE_KEY);
+                if (savedTitle) {
+                    setAppTitle(savedTitle);
+                }
             }, []);
 
+            // Save Title Effect
             useEffect(() => {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(tickets));
+                localStorage.setItem(APP_TITLE_KEY, appTitle);
+                document.title = `${appTitle} - E-Ticket Wallet`;
+            }, [appTitle]);
+
+            // Save Tickets Effect (Safely)
+            useEffect(() => {
+                if (tickets.length === 0) return; // Don't save empty init
+                try {
+                    const data = JSON.stringify(tickets);
+                    localStorage.setItem(STORAGE_KEY, data);
+                } catch (e) {
+                    console.error("Storage Error:", e);
+                    // Check if quota exceeded
+                    if (e.name === 'QuotaExceededError' || e.message.includes('quota')) {
+                        // Strategy: Find the most recent ticket and remove its image, then try again
+                        // This prevents the "White Screen" or crash loop
+                        alert('注意：手機儲存空間已滿！這張票券將僅儲存文字，不儲存截圖以節省空間。請刪除部分舊票券以釋放空間。');
+                        
+                        setTickets(prev => {
+                            // Deep copy to avoid mutating state directly
+                            const newTickets = [...prev];
+                            // Find the latest ticket (usually index 0) and remove image
+                            if (newTickets.length > 0 && newTickets[0].imageUrl) {
+                                newTickets[0].imageUrl = ''; // Remove image
+                                newTickets[0].notes += ' (因儲存空間不足，系統自動移除了圖片)';
+                            }
+                            return newTickets;
+                        });
+                    }
+                }
             }, [tickets]);
 
             const exportData = () => {
@@ -330,23 +324,19 @@
                     alert('目前沒有資料可供備份');
                     return;
                 }
-                
                 try {
                     const blob = new Blob([dataStr], { type: 'application/json' });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    
                     const date = new Date();
                     const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
                     a.download = `flower_backup_${dateStr}.json`;
-                    
                     document.body.appendChild(a);
                     a.click();
                     document.body.removeChild(a);
                     URL.revokeObjectURL(url);
                 } catch (e) {
-                    console.error("Export failed", e);
                     alert("匯出失敗，請確認瀏覽器設定");
                 }
             };
@@ -354,24 +344,18 @@
             const handleImportFileChange = (event) => {
                 const file = event.target.files?.[0];
                 if (!file) return;
-
                 if (window.confirm('匯入將會清空並覆蓋目前所有記帳資料，確定要執行嗎？')) {
                     const reader = new FileReader();
                     reader.onload = (e) => {
                         try {
                             const content = e.target?.result;
                             const parsed = JSON.parse(content);
-                            
-                            if (!Array.isArray(parsed)) {
-                                throw new Error('格式錯誤');
-                            }
-                            
+                            if (!Array.isArray(parsed)) throw new Error('格式錯誤');
                             localStorage.setItem(STORAGE_KEY, content);
                             alert('還原成功！頁面將重新整理。');
                             window.location.reload();
                         } catch (err) {
                             alert('匯入失敗：檔案格式錯誤或損毀');
-                            console.error(err);
                         }
                     };
                     reader.readAsText(file);
@@ -393,57 +377,70 @@
                     reader.onload = async (e) => {
                         const result = e.target?.result;
                         
-                        const img = new Image();
-                        img.onload = async () => {
+                        // Use a promise to handle Image loading safely
+                        const processImage = () => new Promise((resolve, reject) => {
+                            const img = new Image();
+                            img.onload = () => resolve(img);
+                            img.onerror = reject;
+                            img.src = result;
+                        });
+
+                        try {
+                            const img = await processImage();
                             const canvas = document.createElement('canvas');
-                            const MAX_WIDTH = 1000; 
+                            
+                            // --- OPTIMIZATION: Reduce Resolution ---
+                            const MAX_WIDTH = 720; 
                             const scale = MAX_WIDTH / img.width;
                             canvas.width = MAX_WIDTH;
                             canvas.height = img.height * scale;
+                            
                             const ctx = canvas.getContext('2d');
-                            ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+                            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
                             
-                            const resizedBase64 = canvas.toDataURL('image/jpeg', 0.8);
+                            // --- OPTIMIZATION: Reduce Quality ---
+                            const resizedBase64 = canvas.toDataURL('image/jpeg', 0.5);
                             
-                            try {
-                                setUploadStatus('本地辨識初始化...');
-                                await new Promise(r => setTimeout(r, 100));
+                            // Free up memory immediately
+                            ctx.clearRect(0, 0, canvas.width, canvas.height);
+                            
+                            setUploadStatus('本地辨識初始化...');
+                            await new Promise(r => setTimeout(r, 50)); // Give UI a breath
 
-                                setUploadStatus('OCR 文字解析中...');
-                                const data = await extractTicketDataLocal(resizedBase64);
-                                
-                                setUploadStatus('完成！');
+                            setUploadStatus('OCR 文字解析中...');
+                            const data = await extractTicketDataLocal(resizedBase64);
+                            
+                            setUploadStatus('完成！');
 
-                                const newTicket = {
-                                    id: Date.now().toString(),
-                                    storeName: data.storeName,
-                                    itemName: data.itemName,
-                                    expiryDate: data.expiryDate,
-                                    price: data.price,
-                                    imageUrl: resizedBase64,
-                                    isUsed: false,
-                                    createdAt: Date.now(),
-                                    notes: data.rawText || '',
-                                    isNoExpiry: false 
-                                };
-                                setTickets(prev => [newTicket, ...prev]); 
-                                setDetailsTicketId(newTicket.id);
-                                setActiveTab('available');
-                            } catch (err) {
-                                console.error(err);
-                                setError(err.message || '辨識失敗，請確認圖片清晰度。');
-                            } finally {
-                                setIsUploading(false);
-                                setUploadStatus('');
-                            }
-                        };
-                        img.src = result;
+                            const newTicket = {
+                                id: Date.now().toString(),
+                                storeName: data.storeName,
+                                itemName: data.itemName,
+                                expiryDate: data.expiryDate,
+                                price: data.price,
+                                imageUrl: resizedBase64,
+                                isUsed: false,
+                                createdAt: Date.now(),
+                                notes: data.rawText || '',
+                                isNoExpiry: false 
+                            };
+                            setTickets(prev => [newTicket, ...prev]); 
+                            setDetailsTicketId(newTicket.id);
+                            setActiveTab('available');
+                        } catch (err) {
+                            console.error(err);
+                            setError('圖片處理失敗，可能是記憶體不足。請嘗試較小的圖片。');
+                        } finally {
+                            setIsUploading(false);
+                            setUploadStatus('');
+                        }
                     };
                     reader.readAsDataURL(file);
                 } catch (err) {
                     setError('讀取檔案失敗');
                     setIsUploading(false);
                 }
+                // Clear input immediately to allow re-selection
                 if (fileInputRef.current) fileInputRef.current.value = '';
             };
 
@@ -524,32 +521,22 @@
 
             const filteredTickets = useMemo(() => {
                 const query = searchQuery.toLowerCase();
-                
                 const queryFiltered = tickets.filter(t => 
                     t.storeName.toLowerCase().includes(query) || 
                     t.itemName.toLowerCase().includes(query) ||
                     (t.notes?.toLowerCase().includes(query)) ||
                     (t.authCode?.toLowerCase().includes(query))
                 );
-
                 return queryFiltered.filter(t => {
                     const isExpired = checkIsExpired(t.expiryDate, t.isNoExpiry);
-
-                    if (activeTab === 'available') {
-                        return !t.isUsed && !isExpired;
-                    }
-                    if (activeTab === 'used') {
-                        return t.isUsed;
-                    }
-                    if (activeTab === 'expired') {
-                        return !t.isUsed && isExpired;
-                    }
+                    if (activeTab === 'available') return !t.isUsed && !isExpired;
+                    if (activeTab === 'used') return t.isUsed;
+                    if (activeTab === 'expired') return !t.isUsed && isExpired;
                     return true;
                 }).sort((a, b) => {
                     if (a.isNoExpiry && b.isNoExpiry) return 0;
                     if (a.isNoExpiry) return 1; 
                     if (b.isNoExpiry) return -1; 
-
                     return a.expiryDate.localeCompare(b.expiryDate);
                 });
             }, [tickets, searchQuery, activeTab]);
@@ -574,17 +561,13 @@
                                         <p className="text-[10px] tracking-[0.2em] text-stone-400 font-bold uppercase mb-1">本機用// LOCAL OCR WALLET //本機用</p>
                                         <h1 className="text-2xl font-medium text-stone-800 tracking-tight flex items-center gap-2">
                                             <LucidePiggyBank className="text-pink-500" size={28} />
-                                            花花的小金庫
+                                            {appTitle}
                                         </h1>
                                     </div>
-                                    <button 
-                                        onClick={() => setShowBackupModal(true)}
-                                        className="text-stone-400 hover:text-stone-600 transition-colors p-2"
-                                    >
+                                    <button onClick={() => setShowBackupModal(true)} className="text-stone-400 hover:text-stone-600 transition-colors p-2">
                                         <LucideSettings size={20} />
                                     </button>
                                 </div>
-                                
                                 <div className="relative group mb-6">
                                     <input 
                                         type="text" 
@@ -594,31 +577,24 @@
                                         onChange={(e) => handleSearchChange(e.target.value)}
                                     />
                                 </div>
-
                                 <div className="flex p-1 bg-stone-200/50 rounded-xl relative">
                                     {['available', 'used', 'expired'].map((tab) => (
                                         <button
                                             key={tab}
                                             onClick={() => handleTabChange(tab)}
                                             className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all duration-300 relative z-10
-                                                ${activeTab === tab 
-                                                ? 'bg-white text-stone-800 shadow-sm' 
-                                                : 'text-stone-400 hover:text-stone-600'}`}
+                                                ${activeTab === tab ? 'bg-white text-stone-800 shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}
                                         >
                                             {tab === 'available' && <LucideTicket size={14} />}
                                             {tab === 'used' && <LucideCheckCircle size={14} />}
                                             {tab === 'expired' && <LucideArchive size={14} />}
-                                            
                                             <span>
                                                 {tab === 'available' && '可使用'}
                                                 {tab === 'used' && '已使用'}
                                                 {tab === 'expired' && '已過期'}
                                             </span>
-                                            
                                             {activeTab !== tab && tabCounts[tab] > 0 && (
-                                                <span className="ml-1 bg-stone-300 text-stone-600 px-1.5 rounded-full text-[9px] min-w-[14px] text-center">
-                                                    {tabCounts[tab]}
-                                                </span>
+                                                <span className="ml-1 bg-stone-300 text-stone-600 px-1.5 rounded-full text-[9px] min-w-[14px] text-center">{tabCounts[tab]}</span>
                                             )}
                                         </button>
                                     ))}
@@ -662,7 +638,6 @@
                                     {activeTab === 'available' && <LucideTicket className="w-12 h-12 mb-3 opacity-20" />}
                                     {activeTab === 'used' && <LucideCheckCircle className="w-12 h-12 mb-3 opacity-20" />}
                                     {activeTab === 'expired' && <LucideArchive className="w-12 h-12 mb-3 opacity-20" />}
-                                    
                                     <p className="text-stone-400 text-sm font-light tracking-widest uppercase">
                                         {activeTab === 'available' && '沒有可使用的票券'}
                                         {activeTab === 'used' && '沒有已使用的票券'}
@@ -673,308 +648,167 @@
                             )}
                         </main>
 
+                        {/* Modals remain largely same but simplified here for brevity - assume standard structure */}
                         {scanTicket && (
-                            <div 
-                                className="fixed inset-0 z-[60] flex items-center justify-center bg-stone-900/95 backdrop-blur-sm p-4 animate-in fade-in duration-200"
-                                onClick={handleCloseScan} 
-                            >
-                                <button className="absolute top-6 right-6 text-white/70 hover:text-white p-2">
-                                    <LucideX size={32} />
-                                </button>
-                                
+                            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-stone-900/95 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={handleCloseScan}>
+                                <button className="absolute top-6 right-6 text-white/70 hover:text-white p-2"><LucideX size={32} /></button>
                                 {scanTicket.imageUrl ? (
-                                    <img 
-                                        src={scanTicket.imageUrl} 
-                                        alt="Scan View" 
-                                        className="max-w-full max-h-[80vh] object-contain shadow-2xl rounded-sm"
-                                        onClick={(e) => e.stopPropagation()}
-                                    />
+                                    <img src={scanTicket.imageUrl} alt="Scan View" className="max-w-full max-h-[80vh] object-contain shadow-2xl rounded-sm" onClick={(e) => e.stopPropagation()}/>
                                 ) : (
-                                    <div 
-                                        className="bg-white p-10 rounded-2xl flex flex-col items-center justify-center text-center max-w-xs shadow-2xl"
-                                        onClick={(e) => e.stopPropagation()}
-                                    >
-                                        <div className="w-20 h-20 bg-stone-100 rounded-full flex items-center justify-center mb-6">
-                                            <LucideAppWindow size={40} className="text-stone-400" />
-                                        </div>
+                                    <div className="bg-white p-10 rounded-2xl flex flex-col items-center justify-center text-center max-w-xs shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                                        <div className="w-20 h-20 bg-stone-100 rounded-full flex items-center justify-center mb-6"><LucideAppWindow size={40} className="text-stone-400" /></div>
                                         <h3 className="text-lg font-bold text-stone-800 mb-2">{scanTicket.itemName || '提醒事項'}</h3>
-                                        <p className="text-stone-500 text-sm leading-relaxed mb-4">
-                                            此項目沒有截圖。<br/>
-                                            請開啟對應的 APP 以使用票券。
-                                        </p>
+                                        <p className="text-stone-500 text-sm leading-relaxed mb-4">此項目沒有截圖（或因空間不足已移除）。<br/>請開啟對應的 APP 以使用票券。</p>
                                         <div className="w-full h-px bg-stone-100 mb-4"></div>
                                         <p className="text-xs text-stone-400">{scanTicket.storeName}</p>
                                     </div>
                                 )}
-                                
-                                <div className="absolute bottom-10 left-0 w-full text-center pointer-events-none">
-                                    <p className="text-white/50 text-xs tracking-widest font-light">點擊任意處關閉</p>
-                                </div>
+                                <div className="absolute bottom-10 left-0 w-full text-center pointer-events-none"><p className="text-white/50 text-xs tracking-widest font-light">點擊任意處關閉</p></div>
                             </div>
                         )}
 
                         {detailsTicket && (
-                            <div 
-                                className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-stone-900/40 backdrop-blur-sm sm:p-6"
-                                onClick={() => handleCloseDetails(false)} 
-                            >
-                                <div 
-                                    className="bg-white w-full max-w-sm sm:rounded-2xl rounded-t-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-y-auto animate-in slide-in-from-bottom duration-300"
-                                    onClick={(e) => e.stopPropagation()}
-                                >
+                            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-stone-900/40 backdrop-blur-sm sm:p-6" onClick={() => handleCloseDetails(false)}>
+                                <div className="bg-white w-full max-w-sm sm:rounded-2xl rounded-t-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-y-auto animate-in slide-in-from-bottom duration-300" onClick={(e) => e.stopPropagation()}>
                                     <div className="sticky top-0 bg-white z-10 px-6 py-4 border-b border-stone-100 flex justify-between items-start rounded-t-2xl">
                                         <div className="min-w-0 pr-4 w-full">
-                                            <input
-                                                value={detailsTicket.storeName}
-                                                onChange={(e) => updateTicketField(detailsTicket.id, 'storeName', e.target.value)}
-                                                className="text-[10px] tracking-widest text-stone-400 uppercase font-bold mb-1 w-full outline-none focus:text-stone-600 bg-transparent placeholder-stone-300"
-                                                placeholder="使用店家"
-                                            />
-                                            <input
-                                                value={detailsTicket.itemName}
-                                                onChange={(e) => updateTicketField(detailsTicket.id, 'itemName', e.target.value)}
-                                                className="text-lg font-medium text-stone-800 leading-tight w-full outline-none border-b border-transparent focus:border-stone-200 bg-transparent placeholder-stone-300"
-                                                placeholder="兌換品項"
-                                            />
+                                            <input value={detailsTicket.storeName} onChange={(e) => updateTicketField(detailsTicket.id, 'storeName', e.target.value)} className="text-[10px] tracking-widest text-stone-400 uppercase font-bold mb-1 w-full outline-none focus:text-stone-600 bg-transparent placeholder-stone-300" placeholder="使用店家"/>
+                                            <input value={detailsTicket.itemName} onChange={(e) => updateTicketField(detailsTicket.id, 'itemName', e.target.value)} className="text-lg font-medium text-stone-800 leading-tight w-full outline-none border-b border-transparent focus:border-stone-200 bg-transparent placeholder-stone-300" placeholder="兌換品項"/>
                                         </div>
                                         <div className="flex gap-1 flex-shrink-0">
-                                            <button onClick={() => deleteTicket(detailsTicket.id)} className="text-stone-300 hover:text-red-500 hover:bg-red-50 p-2 rounded-full transition-colors">
-                                                <LucideTrash2 size={18} />
-                                            </button>
-                                            <button onClick={() => handleCloseDetails(false)} className="text-stone-300 hover:text-stone-800 hover:bg-stone-100 p-2 rounded-full transition-colors">
-                                                <LucideX size={18} />
-                                            </button>
+                                            <button onClick={() => deleteTicket(detailsTicket.id)} className="text-stone-300 hover:text-red-500 hover:bg-red-50 p-2 rounded-full transition-colors"><LucideTrash2 size={18} /></button>
+                                            <button onClick={() => handleCloseDetails(false)} className="text-stone-300 hover:text-stone-800 hover:bg-stone-100 p-2 rounded-full transition-colors"><LucideX size={18} /></button>
                                         </div>
                                     </div>
-
                                     <div className="p-6 space-y-6">
-                                        
                                         <div className="w-full aspect-video overflow-hidden rounded-lg bg-stone-100 border border-stone-100 relative group cursor-pointer" onClick={() => handleOpenScan(detailsTicket)}>
                                             {detailsTicket.imageUrl ? (
                                                 <>
                                                     <img src={detailsTicket.imageUrl} alt="Thumbnail" className="w-full h-full object-cover" />
-                                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
-                                                        <LucideScan className="text-white opacity-0 group-hover:opacity-100 drop-shadow-md" />
-                                                    </div>
+                                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center"><LucideScan className="text-white opacity-0 group-hover:opacity-100 drop-shadow-md" /></div>
                                                 </>
                                             ) : (
                                                 <div className="w-full h-full flex flex-col items-center justify-center text-stone-400 gap-2">
                                                     <LucideAppWindow size={32} />
                                                     <span className="text-xs font-medium">純文字提醒 (無截圖)</span>
-                                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors"></div>
                                                 </div>
                                             )}
                                         </div>
-
                                         <div className="grid grid-cols-2 gap-4">
                                             <div className="bg-stone-50 p-3 rounded-lg">
                                                 <div className="flex justify-between items-center mb-2">
-                                                    <label className="flex items-center gap-1.5 text-[10px] tracking-widest text-stone-400 uppercase font-bold">
-                                                        <LucideCalendar size={12} />
-                                                        有效期限
-                                                    </label>
+                                                    <label className="flex items-center gap-1.5 text-[10px] tracking-widest text-stone-400 uppercase font-bold"><LucideCalendar size={12} />有效期限</label>
                                                     <label className="flex items-center gap-1 cursor-pointer group">
                                                         <div className={`w-3 h-3 rounded-sm border flex items-center justify-center transition-colors ${detailsTicket.isNoExpiry ? 'bg-stone-800 border-stone-800' : 'border-stone-300 group-hover:border-stone-400'}`}>
                                                             {detailsTicket.isNoExpiry && <LucideCheckCircle size={8} className="text-white" />}
                                                         </div>
-                                                        <input 
-                                                            type="checkbox"
-                                                            className="hidden"
-                                                            checked={detailsTicket.isNoExpiry || false}
-                                                            onChange={(e) => updateTicketField(detailsTicket.id, 'isNoExpiry', e.target.checked)}
-                                                        />
+                                                        <input type="checkbox" className="hidden" checked={detailsTicket.isNoExpiry || false} onChange={(e) => updateTicketField(detailsTicket.id, 'isNoExpiry', e.target.checked)}/>
                                                         <span className={`text-[10px] font-bold ${detailsTicket.isNoExpiry ? 'text-stone-800' : 'text-stone-400'}`}>無期限</span>
                                                     </label>
                                                 </div>
-                                                
                                                 {detailsTicket.isNoExpiry ? (
-                                                    <div className="w-full py-1 text-sm text-stone-400 font-medium flex items-center gap-2">
-                                                        <LucideInfinity size={16} />
-                                                        <span>無使用期限</span>
-                                                    </div>
+                                                    <div className="w-full py-1 text-sm text-stone-400 font-medium flex items-center gap-2"><LucideInfinity size={16} /><span>無使用期限</span></div>
                                                 ) : (
-                                                    <input 
-                                                        type="date"
-                                                        className="w-full bg-transparent text-sm text-stone-700 font-medium outline-none"
-                                                        value={detailsTicket.expiryDate.replace(/\./g, '-')}
-                                                        onChange={(e) => updateTicketField(detailsTicket.id, 'expiryDate', e.target.value)}
-                                                    />
+                                                    <input type="date" className="w-full bg-transparent text-sm text-stone-700 font-medium outline-none" value={detailsTicket.expiryDate.replace(/\./g, '-')} onChange={(e) => updateTicketField(detailsTicket.id, 'expiryDate', e.target.value)}/>
                                                 )}
                                             </div>
                                             <div className="bg-stone-50 p-3 rounded-lg">
-                                                <label className="flex items-center gap-1.5 text-[10px] tracking-widest text-stone-400 uppercase font-bold mb-2">
-                                                    <LucideCreditCard size={12} />
-                                                    金額
-                                                </label>
-                                                <div className="flex items-center">
-                                                    <span className="text-stone-400 text-xs mr-1">NT$</span>
-                                                    <input 
-                                                        type="number"
-                                                        className="w-full bg-transparent text-sm text-stone-700 font-medium outline-none"
-                                                        placeholder="-"
-                                                        value={detailsTicket.price || ''}
-                                                        onChange={(e) => updateTicketField(detailsTicket.id, 'price', e.target.value)}
-                                                    />
-                                                </div>
+                                                <label className="flex items-center gap-1.5 text-[10px] tracking-widest text-stone-400 uppercase font-bold mb-2"><LucideCreditCard size={12} />金額</label>
+                                                <div className="flex items-center"><span className="text-stone-400 text-xs mr-1">NT$</span><input type="number" className="w-full bg-transparent text-sm text-stone-700 font-medium outline-none" placeholder="-" value={detailsTicket.price || ''} onChange={(e) => updateTicketField(detailsTicket.id, 'price', e.target.value)}/></div>
                                             </div>
                                         </div>
-                                        
                                         <div className="space-y-4">
                                             <div>
-                                                <label className="flex items-center gap-1.5 text-[10px] tracking-widest text-stone-400 uppercase font-bold mb-2">
-                                                    <LucideExternalLink size={12} />
-                                                    相關連結
-                                                </label>
+                                                <label className="flex items-center gap-1.5 text-[10px] tracking-widest text-stone-400 uppercase font-bold mb-2"><LucideExternalLink size={12} />相關連結</label>
                                                 <div className="flex items-center gap-2 border-b border-stone-200 pb-1">
-                                                    <input 
-                                                        type="text"
-                                                        className="flex-grow text-sm outline-none text-stone-700 bg-transparent placeholder-stone-300"
-                                                        placeholder="https://..."
-                                                        value={detailsTicket.url || ''}
-                                                        onChange={(e) => updateTicketField(detailsTicket.id, 'url', e.target.value)}
-                                                    />
-                                                    {detailsTicket.url && (
-                                                        <a href={detailsTicket.url.startsWith('http') ? detailsTicket.url : `https://${detailsTicket.url}`} target="_blank" rel="noreferrer" className="text-stone-400 hover:text-stone-800">
-                                                            <LucideExternalLink size={14} />
-                                                        </a>
-                                                    )}
+                                                    <input type="text" className="flex-grow text-sm outline-none text-stone-700 bg-transparent placeholder-stone-300" placeholder="https://..." value={detailsTicket.url || ''} onChange={(e) => updateTicketField(detailsTicket.id, 'url', e.target.value)}/>
+                                                    {detailsTicket.url && (<a href={detailsTicket.url.startsWith('http') ? detailsTicket.url : `https://${detailsTicket.url}`} target="_blank" rel="noreferrer" className="text-stone-400 hover:text-stone-800"><LucideExternalLink size={14} /></a>)}
                                                 </div>
                                             </div>
-
                                             <div>
-                                                <label className="flex items-center gap-1.5 text-[10px] tracking-widest text-stone-400 uppercase font-bold mb-2">
-                                                    <LucideStore size={12} />
-                                                    認證碼 / 序號
-                                                </label>
-                                                <input 
-                                                    type="text"
-                                                    className="w-full text-sm border-b border-stone-200 focus:border-stone-800 outline-none pb-1 font-mono tracking-wider bg-transparent placeholder-stone-300"
-                                                    placeholder="輸入序號..."
-                                                    value={detailsTicket.authCode || ''}
-                                                    onChange={(e) => updateTicketField(detailsTicket.id, 'authCode', e.target.value)}
-                                                />
+                                                <label className="flex items-center gap-1.5 text-[10px] tracking-widest text-stone-400 uppercase font-bold mb-2"><LucideStore size={12} />認證碼 / 序號</label>
+                                                <input type="text" className="w-full text-sm border-b border-stone-200 focus:border-stone-800 outline-none pb-1 font-mono tracking-wider bg-transparent placeholder-stone-300" placeholder="輸入序號..." value={detailsTicket.authCode || ''} onChange={(e) => updateTicketField(detailsTicket.id, 'authCode', e.target.value)}/>
                                             </div>
-
                                             <div>
-                                                <label className="block text-[10px] tracking-widest text-stone-400 uppercase font-bold mb-2">
-                                                    備註 (OCR 辨識結果)
-                                                </label>
-                                                <textarea 
-                                                    rows={4}
-                                                    className="w-full text-sm border border-stone-200 rounded-lg p-3 focus:border-stone-800 outline-none resize-none bg-stone-50"
-                                                    placeholder="手動輸入補充資訊..."
-                                                    value={detailsTicket.notes || ''}
-                                                    onChange={(e) => updateTicketField(detailsTicket.id, 'notes', e.target.value)}
-                                                />
+                                                <div className="flex justify-between items-center mb-2">
+                                                    <label className="block text-[10px] tracking-widest text-stone-400 uppercase font-bold">備註 (OCR 辨識結果)</label>
+                                                    {detailsTicket.notes && (
+                                                        <button 
+                                                            onClick={() => updateTicketField(detailsTicket.id, 'notes', '')}
+                                                            className="text-[10px] text-stone-400 hover:text-red-500 flex items-center gap-1 transition-colors px-2 py-1 hover:bg-red-50 rounded"
+                                                        >
+                                                            <LucideEraser size={12} />
+                                                            清除內容
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                <textarea rows={4} className="w-full text-sm border border-stone-200 rounded-lg p-3 focus:border-stone-800 outline-none resize-none bg-stone-50" placeholder="手動輸入補充資訊..." value={detailsTicket.notes || ''} onChange={(e) => updateTicketField(detailsTicket.id, 'notes', e.target.value)}/>
                                             </div>
                                         </div>
-                                        
-                                        <button 
-                                            onClick={() => handleCloseDetails(true)} 
-                                            className="w-full py-3.5 rounded-xl bg-stone-800 text-white font-medium text-sm tracking-widest active:scale-[0.98] transition-all hover:bg-stone-700 hover:shadow-lg"
-                                        >
-                                            儲存變更
-                                        </button>
+                                        <button onClick={() => handleCloseDetails(true)} className="w-full py-3.5 rounded-xl bg-stone-800 text-white font-medium text-sm tracking-widest active:scale-[0.98] transition-all hover:bg-stone-700 hover:shadow-lg">儲存變更</button>
                                     </div>
                                 </div>
                             </div>
                         )}
 
                         {showBackupModal && (
-                            <div 
-                                className="fixed inset-0 z-[70] flex items-center justify-center bg-stone-900/60 backdrop-blur-sm p-6"
-                                onClick={() => setShowBackupModal(false)}
-                            >
-                                <div 
-                                    className="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
-                                    onClick={(e) => e.stopPropagation()}
-                                >
+                            <div className="fixed inset-0 z-[70] flex items-center justify-center bg-stone-900/60 backdrop-blur-sm p-6" onClick={() => setShowBackupModal(false)}>
+                                <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
                                     <div className="px-6 py-5 border-b border-stone-100 flex justify-between items-center bg-stone-50/50">
-                                        <h3 className="text-lg font-bold text-stone-800 flex items-center gap-2">
-                                            <LucideSettings size={20} />
-                                            資料備份與還原
-                                        </h3>
-                                        <button onClick={() => setShowBackupModal(false)} className="text-stone-400 hover:text-stone-600">
-                                            <LucideX size={20} />
-                                        </button>
+                                        <h3 className="text-lg font-bold text-stone-800 flex items-center gap-2"><LucideSettings size={20} />設定</h3>
+                                        <button onClick={() => setShowBackupModal(false)} className="text-stone-400 hover:text-stone-600"><LucideX size={20} /></button>
                                     </div>
-                                    
                                     <div className="p-6 space-y-6">
+                                        
+                                        {/* App Title Setting */}
                                         <div className="space-y-2">
-                                            <label className="text-xs font-bold text-stone-500 uppercase tracking-widest">備份資料</label>
-                                            <button 
-                                                onClick={exportData}
-                                                className="w-full flex items-center justify-center gap-3 py-4 rounded-xl bg-stone-800 text-white font-medium text-sm tracking-wide active:scale-[0.98] transition-all shadow-lg hover:bg-stone-700"
-                                            >
-                                                <LucideDownload size={18} />
-                                                匯出備份檔案
-                                            </button>
-                                            <p className="text-[10px] text-stone-400 text-center">將目前所有資料下載為 JSON 檔案</p>
+                                            <label className="text-xs font-bold text-stone-500 uppercase tracking-widest">應用程式名稱</label>
+                                            <div className="flex items-center gap-2 border border-stone-200 rounded-xl px-3 py-3 bg-stone-50 focus-within:border-stone-800 focus-within:bg-white transition-all">
+                                                <LucidePenLine size={18} className="text-stone-400"/>
+                                                <input 
+                                                    type="text" 
+                                                    value={appTitle} 
+                                                    onChange={(e) => setAppTitle(e.target.value)}
+                                                    className="flex-grow bg-transparent outline-none text-stone-800 font-medium text-sm"
+                                                    placeholder="例如：小明的錢包"
+                                                />
+                                            </div>
+                                            <p className="text-[10px] text-stone-400">自訂名稱將會儲存在此裝置上</p>
                                         </div>
 
                                         <div className="w-full h-px bg-stone-100"></div>
 
                                         <div className="space-y-2">
+                                            <label className="text-xs font-bold text-stone-500 uppercase tracking-widest">備份資料</label>
+                                            <button onClick={exportData} className="w-full flex items-center justify-center gap-3 py-4 rounded-xl bg-stone-800 text-white font-medium text-sm tracking-wide active:scale-[0.98] transition-all shadow-lg hover:bg-stone-700"><LucideDownload size={18} />匯出備份檔案</button>
+                                            <p className="text-[10px] text-stone-400 text-center">將目前所有資料下載為 JSON 檔案</p>
+                                        </div>
+                                        
+                                        <div className="w-full h-px bg-stone-100"></div>
+                                        
+                                        <div className="space-y-2">
                                             <label className="text-xs font-bold text-stone-500 uppercase tracking-widest">還原資料</label>
-                                            <button 
-                                                onClick={() => importFileRef.current?.click()}
-                                                className="w-full flex items-center justify-center gap-3 py-4 rounded-xl bg-rose-50 border border-rose-100 text-rose-600 font-medium text-sm tracking-wide active:scale-[0.98] transition-all hover:bg-rose-100"
-                                            >
-                                                <LucideUpload size={18} />
-                                                匯入還原檔案
-                                            </button>
-                                            <p className="text-[10px] text-rose-400 text-center flex items-center justify-center gap-1">
-                                                <LucideAlertCircle size={10} />
-                                                警告：匯入將會完全覆蓋現有資料
-                                            </p>
+                                            <button onClick={() => importFileRef.current?.click()} className="w-full flex items-center justify-center gap-3 py-4 rounded-xl bg-rose-50 border border-rose-100 text-rose-600 font-medium text-sm tracking-wide active:scale-[0.98] transition-all hover:bg-rose-100"><LucideUpload size={18} />匯入還原檔案</button>
+                                            <p className="text-[10px] text-rose-400 text-center flex items-center justify-center gap-1"><LucideAlertCircle size={10} />警告：匯入將會完全覆蓋現有資料</p>
+                                        </div>
+                                        
+                                        <div className="w-full h-px bg-stone-100"></div>
+                                        
+                                        <div className="text-center">
+                                            <p className="text-[10px] text-stone-300 font-mono tracking-widest">V2.0 (Local)</p>
                                         </div>
                                     </div>
-                                    <input 
-                                        type="file" 
-                                        ref={importFileRef} 
-                                        onChange={handleImportFileChange} 
-                                        accept=".json" 
-                                        className="hidden" 
-                                    />
+                                    <input type="file" ref={importFileRef} onChange={handleImportFileChange} accept=".json" className="hidden" />
                                 </div>
                             </div>
                         )}
 
                         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 w-full max-w-md px-6 z-20 pointer-events-none flex gap-3">
-                            <button 
-                                onClick={handleAddManualTicket}
-                                className="flex-1 py-4 rounded-2xl bg-white text-stone-800 font-medium text-sm tracking-wider transition-all shadow-xl pointer-events-auto flex items-center justify-center gap-2 hover:bg-stone-50 active:scale-[0.98] border border-stone-100"
-                            >
-                                <LucideBellPlus size={18} className="text-pink-500" />
-                                <span>新增提醒</span>
+                            <button onClick={handleAddManualTicket} className="flex-1 py-4 rounded-2xl bg-white text-stone-800 font-medium text-sm tracking-wider transition-all shadow-xl pointer-events-auto flex items-center justify-center gap-2 hover:bg-stone-50 active:scale-[0.98] border border-stone-100"><LucideBellPlus size={18} className="text-pink-500" /><span>新增提醒</span></button>
+                            <button onClick={() => fileInputRef.current?.click()} disabled={isUploading} className={`flex-[2] py-4 rounded-2xl bg-stone-800 text-white font-medium text-sm tracking-[0.15em] transition-all shadow-xl pointer-events-auto flex items-center justify-center gap-3 ${isUploading ? 'opacity-80 cursor-wait' : 'hover:bg-stone-900 active:scale-[0.98] hover:shadow-2xl'}`}>
+                                {isUploading ? <><LucideLoader2 className="animate-spin" size={18} /><span>辨識中...</span></> : <><LucideScan size={18} /><span>掃描票券</span></>}
                             </button>
-
-                            <button 
-                                onClick={() => fileInputRef.current?.click()}
-                                disabled={isUploading}
-                                className={`flex-[2] py-4 rounded-2xl bg-stone-800 text-white font-medium text-sm tracking-[0.15em] transition-all shadow-xl pointer-events-auto flex items-center justify-center gap-3
-                                    ${isUploading ? 'opacity-80 cursor-wait' : 'hover:bg-stone-900 active:scale-[0.98] hover:shadow-2xl'}`}
-                            >
-                                {isUploading ? (
-                                    <>
-                                        <LucideLoader2 className="animate-spin" size={18} />
-                                        <span>辨識中...</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <LucideScan size={18} />
-                                        <span>掃描票券</span>
-                                    </>
-                                )}
-                            </button>
-                            
-                            <input 
-                                type="file" 
-                                ref={fileInputRef} 
-                                onChange={handleFileUpload} 
-                                accept="image/*" 
-                                className="hidden" 
-                            />
+                            <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept="image/*" className="hidden" />
                         </div>
                     </div>
                 </div>

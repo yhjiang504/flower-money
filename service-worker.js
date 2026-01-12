@@ -1,4 +1,4 @@
-const CACHE_NAME = 'flower-money-v1';
+const CACHE_NAME = 'flower-money-v2';
 
 // 第一次安裝時，先把核心檔案存起來
 self.addEventListener('install', (e) => {
