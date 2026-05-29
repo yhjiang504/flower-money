@@ -140,23 +140,32 @@
             };
         };
 
-        // 主 OCR 入口：優先 gemini-2.5-flash（新版高效模型），備用 gemini-2.5-pro
+        // 主 OCR 入口：優先 gemini-2.5-flash，若遇塞車或配額問題，自動切換至備用模型
         const extractTicketDataWithGemini = async (imageBase64, apiKey) => {
-            try {
-                return await callGeminiModel('gemini-2.5-flash', imageBase64, apiKey);
-            } catch (err1) {
-                if (err1.message === 'QUOTA_EXCEEDED') {
-                    try {
-                        return await callGeminiModel('gemini-2.5-flash-preview-05-20', imageBase64, apiKey);
-                    } catch (err2) {
-                        if (err2.message === 'QUOTA_EXCEEDED') {
-                            throw new Error('配額已用完，請稍後再試或到 aistudio.google.com/apikey 確認 Key 狀態');
-                        }
-                        throw err2;
+            const models = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.5-pro'];
+            let lastError = null;
+
+            for (const model of models) {
+                try {
+                    return await callGeminiModel(model, imageBase64, apiKey);
+                } catch (err) {
+                    lastError = err;
+                    // 如果是 API Key 錯誤，就不用換模型重試了，直接拋出
+                    if (err.message.includes('API_KEY_INVALID') || err.message.includes('key is not valid')) {
+                        throw err;
                     }
+                    console.warn(`模型 ${model} 辨識失敗，嘗試下一個模型。錯誤原因:`, err.message);
                 }
-                throw err1;
             }
+
+            // 如果所有模型都失敗，根據最後一個錯誤給出友善提示
+            if (lastError && (lastError.message === 'QUOTA_EXCEEDED' || lastError.message.includes('quota') || lastError.message.includes('Quota'))) {
+                throw new Error('Gemini 免費額度已達上限，請稍後再試。');
+            }
+            if (lastError && (lastError.message.includes('high demand') || lastError.message.includes('demand'))) {
+                throw new Error('Google 伺服器目前極度繁忙（High Demand），請稍等幾秒後再試一次。');
+            }
+            throw lastError || new Error('所有備用模型均辨識失敗');
         };
 
 
@@ -313,6 +322,8 @@
         const LAST_BACKUP_KEY      = 'e_ticket_wallet_last_backup_time';
         const GEMINI_KEY_KEY       = 'e_ticket_wallet_gemini_key';     // 新增
         const DRIVE_ENABLED_KEY    = 'e_ticket_wallet_drive_enabled';  // 新增
+        const LINE_TOKEN_KEY       = 'e_ticket_wallet_line_token';     // 新增 LINE Token
+        const LINE_USERID_KEY      = 'e_ticket_wallet_line_userid';    // 新增 LINE User ID
 
         // ═══════════════════════════════════════════════════════════════════════
         //  主 App 元件
@@ -325,6 +336,9 @@
             const [geminiKey,     setGeminiKey]     = useState('');
             const [driveEnabled,  setDriveEnabled]  = useState(false);
             const [showKey,       setShowKey]       = useState(false);  // API Key 顯示/隱藏
+            const [lineToken,     setLineToken]     = useState('');     // LINE Channel Access Token
+            const [lineUserId,    setLineUserId]    = useState('');     // LINE User ID
+            const [showLineToken, setShowLineToken] = useState(false);  // LINE Token 顯示/隱藏
             const [activeTab,     setActiveTab]     = useState('available');
             const [searchQuery,   setSearchQuery]   = useState('');
             const [isUploading,   setIsUploading]   = useState(false);
@@ -358,6 +372,8 @@
                     if (sv(GAS_URL_KEY))     setGasUrl(sv(GAS_URL_KEY));
                     if (sv(GEMINI_KEY_KEY))  setGeminiKey(sv(GEMINI_KEY_KEY));
                     if (sv(DRIVE_ENABLED_KEY)) setDriveEnabled(sv(DRIVE_ENABLED_KEY) === 'true');
+                    if (sv(LINE_TOKEN_KEY))  setLineToken(sv(LINE_TOKEN_KEY));
+                    if (sv(LINE_USERID_KEY)) setLineUserId(sv(LINE_USERID_KEY));
                     setLastSyncTime(sv(LAST_SYNC_KEY));
                     setLastBkTime(sv(LAST_BACKUP_KEY));
 
@@ -390,6 +406,8 @@
             useEffect(() => { localStorage.setItem(GAS_URL_KEY,      gasUrl);     }, [gasUrl]);
             useEffect(() => { localStorage.setItem(GEMINI_KEY_KEY,   geminiKey);  }, [geminiKey]);
             useEffect(() => { localStorage.setItem(DRIVE_ENABLED_KEY, driveEnabled.toString()); }, [driveEnabled]);
+            useEffect(() => { localStorage.setItem(LINE_TOKEN_KEY,  lineToken);  }, [lineToken]);
+            useEffect(() => { localStorage.setItem(LINE_USERID_KEY, lineUserId); }, [lineUserId]);
 
             // ── 票券資料持久化 ────────────────────────────────────────────────
             useEffect(() => {
@@ -403,8 +421,7 @@
                 if (!gasUrl.startsWith('https://script.google.com/')) { alert('網址格式錯誤'); return; }
                 setIsSyncing(true); setSyncResult(null);
                 try {
-                    const light = tickets.map(({ imageUrl, ...rest }) => rest); // 不傳圖片
-                    await fetch(gasUrl, { method: 'POST', body: JSON.stringify({ tickets: light }), redirect: 'follow' });
+                    await fetch(gasUrl, { method: 'POST', body: JSON.stringify({ tickets: light, lineToken, lineUserId }), redirect: 'follow' });
                 } catch(e) { console.error('Sync error', e); }
                 // 無論成功失敗都記錄時間（GAS 無 CORS 回應時 catch 但實際已執行）
                 const now = new Date().toLocaleString();
@@ -1048,6 +1065,55 @@
 
                                     <div className="w-full h-px bg-stone-100"/>
 
+                                    {/* LINE Bot 提醒設定 */}
+                                    <div className="space-y-3">
+                                        <label className="text-xs font-bold text-stone-500 uppercase tracking-widest flex items-center gap-1.5">
+                                            <LucideSmartphone size={14} className="text-emerald-500"/>
+                                            LINE 機器人提醒設定
+                                        </label>
+                                        
+                                        {/* Token 輸入框 */}
+                                        <div className="space-y-1">
+                                            <span className="text-[10px] font-bold text-stone-400">Channel Access Token</span>
+                                            <div className="flex items-center gap-2 border border-stone-200 rounded-xl px-3 py-2.5 bg-stone-50 focus-within:border-emerald-300 focus-within:bg-white transition-all">
+                                                <LucideLink size={16} className="text-emerald-500 flex-shrink-0"/>
+                                                <input
+                                                    type={showLineToken ? 'text' : 'password'}
+                                                    value={lineToken}
+                                                    onChange={e => setLineToken(e.target.value)}
+                                                    className="flex-grow bg-transparent outline-none text-stone-800 font-medium text-xs font-mono min-w-0"
+                                                    placeholder="貼上 Channel Access Token..."
+                                                />
+                                                <button onClick={() => setShowLineToken(!showLineToken)} className="text-stone-300 hover:text-stone-600 flex-shrink-0">
+                                                    {showLineToken ? <LucideEyeOff size={14}/> : <LucideEye size={14}/>}
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* User ID 輸入框 */}
+                                        <div className="space-y-1">
+                                            <span className="text-[10px] font-bold text-stone-400">您的 User ID</span>
+                                            <div className="flex items-center gap-2 border border-stone-200 rounded-xl px-3 py-2.5 bg-stone-50 focus-within:border-emerald-300 focus-within:bg-white transition-all">
+                                                <LucideSmartphone size={16} className="text-emerald-500 flex-shrink-0"/>
+                                                <input
+                                                    type="text"
+                                                    value={lineUserId}
+                                                    onChange={e => setLineUserId(e.target.value)}
+                                                    className="flex-grow bg-transparent outline-none text-stone-800 font-medium text-xs font-mono min-w-0"
+                                                    placeholder="貼上 LINE User ID (U... 開頭)..."
+                                                />
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-[10px] text-emerald-700 space-y-1">
+                                            <p className="font-bold">💡 啟用方式：</p>
+                                            <p>1. 填妥上方欄位後，點擊上方的「立即同步至 Google Sheet」存入後台。</p>
+                                            <p>2. 在 Google Apps Script 中部署最新程式碼並設定每日定時觸發器即可啟用。</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="w-full h-px bg-stone-100"/>
+
                                     {/* 備份 */}
                                     <div className="space-y-2">
                                         <label className="text-xs font-bold text-stone-500 uppercase tracking-widest">備份資料</label>
@@ -1076,7 +1142,7 @@
 
                                     <div className="w-full h-px bg-stone-100"/>
                                     <div className="text-center">
-                                        <p className="text-[10px] text-stone-300 font-mono tracking-widest">V3.0 · Gemini AI + Drive Sync</p>
+                                        <p className="text-[10px] text-stone-300 font-mono tracking-widest">V3.2 · Gemini AI + Drive Sync</p>
                                     </div>
                                 </div>
                                 <input type="file" ref={importFileRef} onChange={handleImport} accept=".json" className="hidden"/>
