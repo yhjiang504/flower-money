@@ -1,42 +1,45 @@
-// 🔥 1. 這裡改成 v2.7，強迫手機更新
-const CACHE_NAME = 'flower-money-v2.7';
+// 🌸 花花大金庫 V3.0 Service Worker
+// 版本更新時，改這裡的版本號即可強制手機更新快取
+const CACHE_NAME = 'flower-money-v3.0';
 
-// 安裝階段 (Install)
-self.addEventListener('install', (e) => {
-  // 🔥 2. 強制插隊：讓這個新 Service Worker 立刻進入等待狀態，不用等舊的停止
-  self.skipWaiting(); 
-  
+// 安裝階段：快取核心資源
+self.addEventListener('install', e => {
+  self.skipWaiting(); // 立刻插隊取代舊版
   e.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(['./', './index.html', './icon.png']);
-    })
+    caches.open(CACHE_NAME).then(cache =>
+      cache.addAll(['./', './index.html', './icon.png'])
+    )
   );
 });
 
-// 啟動階段 (Activate) - 🔥 3. 這是你原本缺少的「大掃除」功能
-self.addEventListener('activate', (e) => {
+// 啟動階段：清除所有舊版快取
+self.addEventListener('activate', e => {
   e.waitUntil(
-    caches.keys().then((keyList) => {
-      return Promise.all(keyList.map((key) => {
-        // 如果這個快取的名字不是現在的版本 (v3)，就把它刪掉！
+    caches.keys().then(keys =>
+      Promise.all(keys.map(key => {
         if (key !== CACHE_NAME) {
-          console.log('刪除舊快取:', key);
+          console.log('🗑️ 刪除舊快取:', key);
           return caches.delete(key);
         }
-      }));
-    })
+      }))
+    )
   );
-  // 讓新版 Service Worker 立刻接管所有頁面
-  return self.clients.claim();
+  return self.clients.claim(); // 立刻接管所有分頁
 });
 
-// 抓取階段 (Fetch) - 這部分保持不變
-self.addEventListener('fetch', (e) => {
+// 攔截請求：優先返回快取，否則網路請求後存入快取
+self.addEventListener('fetch', e => {
   e.respondWith(
     (async () => {
-      const r = await caches.match(e.request);
-      if (r) { return r; }
-      
+      // API 請求（Gemini / GAS / Drive）不走快取，直接網路
+      if (
+        e.request.url.includes('googleapis.com') ||
+        e.request.url.includes('script.google.com')
+      ) {
+        return fetch(e.request);
+      }
+      const cached = await caches.match(e.request);
+      if (cached) return cached;
       const response = await fetch(e.request);
       const cache = await caches.open(CACHE_NAME);
       cache.put(e.request, response.clone());
