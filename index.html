@@ -87,16 +87,16 @@
 
         // ═══════════════════════════════════════════════════════════════════════
         //  Gemini Vision OCR
-        //  - 將票券截圖送到 Gemini 2.0 Flash，AI 自動辨識所有欄位
+        //  - 主要使用 gemini-1.5-flash（免費額度穩定）
+        //  - 若失敗自動切換 gemini-2.0-flash 重試
         // ═══════════════════════════════════════════════════════════════════════
-        const extractTicketDataWithGemini = async (imageBase64, apiKey) => {
-            // 移除 data URI 前綴，只保留純 base64 字串
+        const callGeminiModel = async (modelName, imageBase64, apiKey) => {
             const base64Data = imageBase64.includes(',')
                 ? imageBase64.split(',')[1]
                 : imageBase64;
 
             const res = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+                `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`,
                 {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -116,7 +116,12 @@
 
             if (!res.ok) {
                 const errData = await res.json().catch(() => ({}));
-                throw new Error(errData.error?.message || `Gemini API 錯誤 (${res.status})`);
+                const msg = errData.error?.message || `HTTP ${res.status}`;
+                // 配額不足時給出明確提示
+                if (msg.includes('quota') || msg.includes('QUOTA') || res.status === 429) {
+                    throw new Error('QUOTA_EXCEEDED');
+                }
+                throw new Error(msg);
             }
 
             const result = await res.json();
@@ -129,13 +134,32 @@
                 storeName:  parsed.storeName  || '',
                 itemName:   parsed.itemName   || '',
                 expiryDate: parsed.expiryDate || new Date().toISOString().split('T')[0],
-                price:      parsed.price      ? parseInt(String(parsed.price).replace(/[^0-9]/g, ''), 10) : 0,
-                source:     parsed.source     || '',
+                price:      parsed.price ? parseInt(String(parsed.price).replace(/[^0-9]/g, ''), 10) : 0,
+                source:     parsed.source || '',
                 rawText:    text
             };
         };
 
-        // ═══════════════════════════════════════════════════════════════════════
+        // 主 OCR 入口：優先 gemini-2.5-flash（新版高效模型），備用 gemini-2.5-pro
+        const extractTicketDataWithGemini = async (imageBase64, apiKey) => {
+            try {
+                return await callGeminiModel('gemini-2.5-flash', imageBase64, apiKey);
+            } catch (err1) {
+                if (err1.message === 'QUOTA_EXCEEDED') {
+                    try {
+                        return await callGeminiModel('gemini-2.5-flash-preview-05-20', imageBase64, apiKey);
+                    } catch (err2) {
+                        if (err2.message === 'QUOTA_EXCEEDED') {
+                            throw new Error('配額已用完，請稍後再試或到 aistudio.google.com/apikey 確認 Key 狀態');
+                        }
+                        throw err2;
+                    }
+                }
+                throw err1;
+            }
+        };
+
+
         //  Google Drive 操作（透過 Google Apps Script 中繼）
         //  - 不需要 OAuth，GAS 以你的 Google 帳號身分執行
         // ═══════════════════════════════════════════════════════════════════════
