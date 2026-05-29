@@ -1,6 +1,6 @@
-// 🌸 花花大金庫 V3.3 Service Worker
+// 🌸 花花大金庫 V3.4 Service Worker
 // 版本更新時，改這裡的版本號即可強制手機更新快取
-const CACHE_NAME = 'flower-money-v3.3';
+const CACHE_NAME = 'flower-money-v3.4';
 
 // 安裝階段：快取核心資源
 self.addEventListener('install', e => {

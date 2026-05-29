@@ -421,13 +421,25 @@
                 if (!gasUrl.startsWith('https://script.google.com/')) { alert('網址格式錯誤'); return; }
                 setIsSyncing(true); setSyncResult(null);
                 try {
-                    await fetch(gasUrl, { method: 'POST', body: JSON.stringify({ tickets: light, lineToken, lineUserId }), redirect: 'follow' });
-                } catch(e) { console.error('Sync error', e); }
-                // 無論成功失敗都記錄時間（GAS 無 CORS 回應時 catch 但實際已執行）
-                const now = new Date().toLocaleString();
-                setLastSyncTime(now); localStorage.setItem(LAST_SYNC_KEY, now);
-                setSyncResult('success'); setTimeout(() => setSyncResult(null), 3000);
-                setIsSyncing(false);
+                    const light = tickets.map(({ imageUrl, ...rest }) => rest); // 修正：重新加上不傳圖片的票券資料處理
+                    await fetch(gasUrl, { 
+                        method: 'POST', 
+                        body: JSON.stringify({ tickets: light, lineToken, lineUserId }), 
+                        mode: 'no-cors', // 採用 no-cors 模式避免瀏覽器 CORS 政策阻擋請求送達 GAS
+                        redirect: 'follow' 
+                    });
+                    
+                    const now = new Date().toLocaleString();
+                    setLastSyncTime(now); 
+                    localStorage.setItem(LAST_SYNC_KEY, now);
+                    setSyncResult('success'); 
+                    setTimeout(() => setSyncResult(null), 3000);
+                } catch(e) { 
+                    console.error('Sync error', e); 
+                    alert(`同步失敗：${e.message}\n請檢查您的 Google Script URL 是否貼錯，或請重試。`);
+                } finally {
+                    setIsSyncing(false);
+                }
             };
 
             // ── 匯出備份 ──────────────────────────────────────────────────────
