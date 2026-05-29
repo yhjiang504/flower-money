@@ -415,23 +415,32 @@
                 set(STORAGE_KEY, tickets).catch(() => setError('儲存失敗，請檢查裝置空間'));
             }, [tickets, isLoaded]);
 
-            // ── 同步至 Google Sheet ───────────────────────────────────────────
+            // ── 同步至 Google Sheet 通用函數 ──────────────────────────────────────
+            const syncTicketsToCloud = async (ticketsList) => {
+                if (!gasUrl || !gasUrl.startsWith('https://script.google.com/')) return;
+                try {
+                    const light = ticketsList.map(({ imageUrl, ...rest }) => rest);
+                    await fetch(gasUrl, { 
+                        method: 'POST', 
+                        body: JSON.stringify({ tickets: light, lineToken, lineUserId }), 
+                        mode: 'no-cors',
+                        redirect: 'follow' 
+                    });
+                    const now = new Date().toLocaleString();
+                    setLastSyncTime(now); 
+                    localStorage.setItem(LAST_SYNC_KEY, now);
+                } catch(e) { 
+                    console.error('Auto sync error', e); 
+                }
+            };
+
+            // ── 同步至 Google Sheet 手動按鈕 ───────────────────────────────────────────
             const handleSyncToCloud = async () => {
                 if (!gasUrl) { alert('請先輸入 Google Script 網址'); return; }
                 if (!gasUrl.startsWith('https://script.google.com/')) { alert('網址格式錯誤'); return; }
                 setIsSyncing(true); setSyncResult(null);
                 try {
-                    const light = tickets.map(({ imageUrl, ...rest }) => rest); // 修正：重新加上不傳圖片的票券資料處理
-                    await fetch(gasUrl, { 
-                        method: 'POST', 
-                        body: JSON.stringify({ tickets: light, lineToken, lineUserId }), 
-                        mode: 'no-cors', // 採用 no-cors 模式避免瀏覽器 CORS 政策阻擋請求送達 GAS
-                        redirect: 'follow' 
-                    });
-                    
-                    const now = new Date().toLocaleString();
-                    setLastSyncTime(now); 
-                    localStorage.setItem(LAST_SYNC_KEY, now);
+                    await syncTicketsToCloud(tickets);
                     setSyncResult('success'); 
                     setTimeout(() => setSyncResult(null), 3000);
                 } catch(e) { 
@@ -555,6 +564,7 @@
                             };
 
                             setTickets(prev => [newTicket, ...prev]);
+                            syncTicketsToCloud([newTicket, ...tickets]); // 新增：圖片掃描成功後自動同步至雲端
                             setDetailsId(newTicket.id);
                             setActiveTab('available');
 
@@ -587,8 +597,16 @@
 
             const handleCloseDetails = save => {
                 if (draftId && detailsId === draftId) {
-                    if (!save) setTickets(prev => prev.filter(t => t.id !== draftId));
+                    if (!save) {
+                        setTickets(prev => prev.filter(t => t.id !== draftId));
+                    } else {
+                        syncTicketsToCloud(tickets); // 手動新增票券點儲存時自動同步
+                    }
                     setDraftId(null);
+                } else {
+                    if (save) {
+                        syncTicketsToCloud(tickets); // 編輯票券點儲存時自動同步
+                    }
                 }
                 setDetailsId(null);
             };
@@ -596,35 +614,41 @@
             // ── 標記已使用（同步移動 Drive 截圖）────────────────────────────
             const handleToggleUsed = id => {
                 setRecentlyId(null);
-                setTickets(prev => prev.map(t => {
-                    if (t.id !== id) return t;
-                    const newIsUsed = !t.isUsed;
-                    // 標記為已使用時，將 Drive 截圖移至「已使用」資料夾
-                    if (newIsUsed && t.driveFileId && isDriveReady) {
-                        moveImageToUsed(gasUrl, t.driveFileId).catch(err =>
-                            console.error('Drive move error:', err)
-                        );
-                    }
-                    return {
-                        ...t, isUsed: newIsUsed,
-                        usedAt:   newIsUsed ? Date.now() : undefined,
-                        usedDate: newIsUsed ? todayStr() : undefined
-                    };
-                }));
+                setTickets(prev => {
+                    const updated = prev.map(t => {
+                        if (t.id !== id) return t;
+                        const newIsUsed = !t.isUsed;
+                        if (newIsUsed && t.driveFileId && isDriveReady) {
+                            moveImageToUsed(gasUrl, t.driveFileId).catch(err =>
+                                console.error('Drive move error:', err)
+                            );
+                        }
+                        return {
+                            ...t, isUsed: newIsUsed,
+                            usedAt:   newIsUsed ? Date.now() : undefined,
+                            usedDate: newIsUsed ? todayStr() : undefined
+                        };
+                    });
+                    syncTicketsToCloud(updated); // 標記已使用時自動同步
+                    return updated;
+                });
             };
 
             // ── 刪除票券（同步刪除 Drive 截圖）──────────────────────────────
             const deleteTicket = id => {
                 if (!window.confirm('確定要刪除這張票券嗎？')) return;
                 const ticket = tickets.find(t => t.id === id);
-                // 將 Drive 截圖移入垃圾桶
                 if (ticket?.driveFileId && isDriveReady) {
                     deleteImageFromDrive(gasUrl, ticket.driveFileId).catch(err =>
                         console.error('Drive delete error:', err)
                     );
                 }
                 setRecentlyId(null);
-                setTickets(prev => prev.filter(t => t.id !== id));
+                setTickets(prev => {
+                    const updated = prev.filter(t => t.id !== id);
+                    syncTicketsToCloud(updated); // 刪除票券時自動同步
+                    return updated;
+                });
                 setDetailsId(null);
                 if (id === draftId) setDraftId(null);
             };
@@ -1154,7 +1178,7 @@
 
                                     <div className="w-full h-px bg-stone-100"/>
                                     <div className="text-center">
-                                        <p className="text-[10px] text-stone-300 font-mono tracking-widest">V3.2 · Gemini AI + Drive Sync</p>
+                                        <p className="text-[10px] text-stone-300 font-mono tracking-widest">V3.5 · Gemini AI + Drive Sync</p>
                                     </div>
                                 </div>
                                 <input type="file" ref={importFileRef} onChange={handleImport} accept=".json" className="hidden"/>
