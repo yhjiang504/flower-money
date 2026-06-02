@@ -494,12 +494,26 @@
                 try {
                     const light = ticketsList.map(({ imageUrl, ...rest }) => rest);
                     const appUrl = window.location.origin + window.location.pathname;
-                    await fetch(gasUrl, { 
+                    const res = await fetch(gasUrl, { 
                         method: 'POST', 
                         body: JSON.stringify({ tickets: light, lineToken, lineUserId, appUrl, gasUrl }), 
-                        mode: 'no-cors',
                         redirect: 'follow' 
                     });
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.success && data.tickets) {
+                            // 🌟 雙向同步：將雲端合併後的最新票券清單（例如已被標記已使用）回寫到前端 state
+                            // 補回本地的 base64 圖片
+                            const imgMap = {};
+                            ticketsList.forEach(t => { if (t.imageUrl) imgMap[t.id] = t.imageUrl; });
+                            
+                            const updatedTickets = data.tickets.map(t => ({
+                                ...t,
+                                imageUrl: imgMap[t.id] || ''
+                            }));
+                            setTickets(updatedTickets);
+                        }
+                    }
                     const now = new Date().toLocaleString();
                     setLastSyncTime(now); 
                     localStorage.setItem(LAST_SYNC_KEY, now);
@@ -626,32 +640,40 @@
                             };
                             let driveFileId = undefined;
 
-                            // ①  Gemini AI 辨識
+                            // ① & ② 並行執行 Gemini AI 辨識與上傳至 Google Drive
+                            setUploadStatus('⚡ AI 辨識與雲端備份並行處理中...');
+                            
+                            const promises = [];
+                            
+                            // 建立 AI 辨識 promise
+                            let ocrPromise = Promise.resolve(null);
                             if (geminiKey) {
-                                setUploadStatus('✨ Gemini AI 辨識中...');
-                                await new Promise(r => setTimeout(r, 30));
-                                try {
-                                    data = await extractTicketDataWithGemini(b64, geminiKey);
-                                } catch(ocrErr) {
+                                ocrPromise = extractTicketDataWithGemini(b64, geminiKey).catch(ocrErr => {
                                     console.error('Gemini error:', ocrErr);
                                     setError(`AI 辨識失敗：${ocrErr.message}，請手動填寫`);
-                                }
-                            } else {
-                                setUploadStatus('⚠️ 未設定 Gemini Key，跳過辨識');
-                                await new Promise(r => setTimeout(r, 600));
+                                    return null;
+                                });
                             }
-
-                            // ②  上傳至 Google Drive
+                            promises.push(ocrPromise);
+                            
+                            // 建立 Drive 上傳 promise
+                            let drivePromise = Promise.resolve(null);
                             if (isDriveReady) {
-                                setUploadStatus('☁️ 上傳截圖至 Google Drive...');
-                                await new Promise(r => setTimeout(r, 30));
-                                try {
-                                    const driveRes = await uploadImageToDrive(gasUrl, b64, newId);
-                                    if (driveRes?.fileId) driveFileId = driveRes.fileId;
-                                } catch(driveErr) {
+                                drivePromise = uploadImageToDrive(gasUrl, b64, newId).catch(driveErr => {
                                     console.error('Drive upload error:', driveErr);
-                                    // Drive 上傳失敗不影響本地儲存，靜默處理
-                                }
+                                    return null;
+                                });
+                            }
+                            promises.push(drivePromise);
+                            
+                            // 等待並行任務完成
+                            const [ocrResult, driveResult] = await Promise.all(promises);
+                            
+                            if (ocrResult) {
+                                data = ocrResult;
+                            }
+                            if (driveResult && driveResult.fileId) {
+                                driveFileId = driveResult.fileId;
                             }
 
                             setUploadStatus('✅ 完成！');
