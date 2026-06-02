@@ -543,35 +543,36 @@
             const handleRedeemConfirm = async () => {
                 if (isRedeeming) return;
                 setIsRedeeming(true);
+                
+                // 🌟 樂觀更新 (Optimistic Update)
+                // 點選後立即將本地 UI 與資料狀態設定為已兌換，提供 0 秒延遲的極速反饋
+                const updatedUsedDate = todayStr();
+                const updatedUsedAt = Date.now();
+                
+                setTickets(prev => prev.map(t => {
+                    if (t.id !== redeemId) return t;
+                    return {
+                        ...t,
+                        isUsed: true,
+                        usedAt: updatedUsedAt,
+                        usedDate: updatedUsedDate
+                    };
+                }));
+                setRedeemTicket(prev => prev ? { ...prev, isUsed: true, usedDate: updatedUsedDate } : null);
+                setRedeemSuccess(true);
+                setIsRedeeming(false);
+                
+                // 在後台異步通知雲端標記已使用，不阻塞用戶介面
                 try {
-                    // 1. 同步通知雲端試算表標記已使用（優先使用連結傳遞的 gas 網址）
                     const activeGasUrl = redeemGas || gasUrl;
                     if (activeGasUrl && activeGasUrl.startsWith('https://script.google.com/')) {
-                        await fetch(activeGasUrl, {
+                        fetch(activeGasUrl, {
                             method: 'POST',
-                            body: JSON.stringify({ action: 'useTicket', ticketId: redeemId }),
-                            mode: 'no-cors'
-                        });
+                            body: JSON.stringify({ action: 'useTicket', ticketId: redeemId })
+                        }).catch(e => console.error('Cloud mark used failed in background:', e));
                     }
-                    // 2. 更新本機 state 與 IndexedDB 狀態 (本機若有才更新)
-                    const updatedUsedDate = todayStr();
-                    const updatedUsedAt = Date.now();
-                    setTickets(prev => prev.map(t => {
-                        if (t.id !== redeemId) return t;
-                        return {
-                            ...t,
-                            isUsed: true,
-                            usedAt: updatedUsedAt,
-                            usedDate: updatedUsedDate
-                        };
-                    }));
-                    setRedeemTicket(prev => prev ? { ...prev, isUsed: true, usedDate: updatedUsedDate } : null);
-                    setRedeemSuccess(true);
                 } catch(e) {
-                    console.error(e);
-                    alert('標記已使用失敗，請確認網路連線。');
-                } finally {
-                    setIsRedeeming(false);
+                    console.error('Cloud mark used error in background:', e);
                 }
             };
 
