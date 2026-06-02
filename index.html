@@ -429,14 +429,15 @@
                         return;
                     }
                     
-                    // 2. 本機找不到且有 gas 網址，向雲端查詢
+                    // 2. 本機找不到且有 gas 網址，向雲端查詢 (使用 GET 請求以支援 CORS 讀取)
                     const activeGasUrl = redeemGas || gasUrl;
                     if (activeGasUrl && activeGasUrl.startsWith('https://script.google.com/')) {
                         setIsLoadingRedeem(true);
                         try {
-                            const res = await fetch(activeGasUrl, {
-                                method: 'POST',
-                                body: JSON.stringify({ action: 'getTicket', ticketId: redeemId }),
+                            const separator = activeGasUrl.includes('?') ? '&' : '?';
+                            const url = `${activeGasUrl}${separator}action=getTicket&ticketId=${redeemId}`;
+                            const res = await fetch(url, {
+                                method: 'GET',
                                 redirect: 'follow'
                             });
                             if (res.ok) {
