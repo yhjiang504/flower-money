@@ -356,9 +356,12 @@
             const [showDelAll,    setShowDelAll]    = useState(false);
             const [draftId,       setDraftId]       = useState(null);
             const [redeemId,      setRedeemId]      = useState(null);       // URL 中傳入的票券 ID
+            const [redeemGas,     setRedeemGas]     = useState(null);       // URL 中傳入的 GAS Web App URL
             const [redeemTicket,  setRedeemTicket]  = useState(null);       // 兌換模式對應的票券資料
             const [redeemSuccess, setRedeemSuccess] = useState(false);      // 兌換成功狀態
             const [isRedeeming,   setIsRedeeming]   = useState(false);      // 兌換中 loading 狀態
+            const [isLoadingRedeem, setIsLoadingRedeem] = useState(false);  // 是否正在自雲端載入票券
+
 
             const fileInputRef   = useRef(null);
             const importFileRef  = useRef(null);
@@ -404,22 +407,54 @@
                     // 偵測 redeem 一鍵兌換參數
                     const urlParams = new URLSearchParams(window.location.search);
                     const rId = urlParams.get('redeem');
+                    const rGas = urlParams.get('gas');
                     if (rId) setRedeemId(rId);
+                    if (rGas) setRedeemGas(rGas);
                     
                     setIsLoaded(true);
+
                 };
                 init();
             }, []);
 
-            // ── 偵測一鍵兌換票券 ───────────────────────────────────────────────
+            // ── 偵測一鍵兌換票券（優先本機，若無則從雲端載入） ───────────────────
             useEffect(() => {
-                if (isLoaded && redeemId) {
+                const loadRedeemTicket = async () => {
+                    if (!isLoaded || !redeemId) return;
+                    
+                    // 1. 優先從本機 IndexedDB 尋找
                     const found = tickets.find(t => t.id === redeemId);
                     if (found) {
                         setRedeemTicket(found);
+                        return;
                     }
-                }
-            }, [tickets, isLoaded, redeemId]);
+                    
+                    // 2. 本機找不到且有 gas 網址，向雲端查詢
+                    const activeGasUrl = redeemGas || gasUrl;
+                    if (activeGasUrl && activeGasUrl.startsWith('https://script.google.com/')) {
+                        setIsLoadingRedeem(true);
+                        try {
+                            const res = await fetch(activeGasUrl, {
+                                method: 'POST',
+                                body: JSON.stringify({ action: 'getTicket', ticketId: redeemId }),
+                                redirect: 'follow'
+                            });
+                            if (res.ok) {
+                                const data = await res.json();
+                                if (data.success && data.ticket) {
+                                    setRedeemTicket(data.ticket);
+                                }
+                            }
+                        } catch (e) {
+                            console.error('Fetch remote ticket error:', e);
+                        } finally {
+                            setIsLoadingRedeem(false);
+                        }
+                    }
+                };
+                loadRedeemTicket();
+            }, [tickets, isLoaded, redeemId, redeemGas, gasUrl]);
+
 
             // ── 設定持久化 ────────────────────────────────────────────────────
             useEffect(() => { localStorage.setItem(APP_TITLE_KEY, appTitle); document.title = `${appTitle} - E-Ticket Wallet`; }, [appTitle]);
@@ -477,15 +512,16 @@
                 if (isRedeeming) return;
                 setIsRedeeming(true);
                 try {
-                    // 1. 同步通知雲端試算表標記已使用
-                    if (gasUrl && gasUrl.startsWith('https://script.google.com/')) {
-                        await fetch(gasUrl, {
+                    // 1. 同步通知雲端試算表標記已使用（優先使用連結傳遞的 gas 網址）
+                    const activeGasUrl = redeemGas || gasUrl;
+                    if (activeGasUrl && activeGasUrl.startsWith('https://script.google.com/')) {
+                        await fetch(activeGasUrl, {
                             method: 'POST',
                             body: JSON.stringify({ action: 'useTicket', ticketId: redeemId }),
                             mode: 'no-cors'
                         });
                     }
-                    // 2. 更新本機 state 與 IndexedDB 狀態
+                    // 2. 更新本機 state 與 IndexedDB 狀態 (本機若有才更新)
                     const updatedUsedDate = todayStr();
                     const updatedUsedAt = Date.now();
                     setTickets(prev => prev.map(t => {
@@ -497,6 +533,7 @@
                             usedDate: updatedUsedDate
                         };
                     }));
+                    setRedeemTicket(prev => prev ? { ...prev, isUsed: true, usedDate: updatedUsedDate } : null);
                     setRedeemSuccess(true);
                 } catch(e) {
                     console.error(e);
@@ -505,6 +542,7 @@
                     setIsRedeeming(false);
                 }
             };
+
 
             // ── 匯出備份 ──────────────────────────────────────────────────────
             const exportData = () => {
@@ -783,7 +821,12 @@
 
                             {/* 內容 */}
                             <div className="p-6 flex-grow flex flex-col justify-between min-h-[50vh] space-y-6">
-                                {redeemTicket ? (
+                                {isLoadingRedeem ? (
+                                    <div className="flex-grow flex flex-col items-center justify-center py-16 text-stone-400 space-y-4">
+                                        <LucideLoader2 className="animate-spin text-stone-400" size={40}/>
+                                        <p className="text-sm font-medium tracking-wide">正在從雲端載入票券資訊...</p>
+                                    </div>
+                                ) : redeemTicket ? (
                                     <>
                                         <div className="text-center space-y-2">
                                             <p className="text-[10px] tracking-[0.2em] text-pink-500 font-bold uppercase">
@@ -808,6 +851,7 @@
                                                     className="w-full h-full object-contain filter drop-shadow-md select-none"
                                                 />
                                             ) : (
+
                                                 <div className="text-stone-400 flex flex-col items-center justify-center gap-2">
                                                     <LucideTicket size={48} className="text-stone-300"/>
                                                     <span className="text-xs font-bold">純文字提醒票券（無條碼截圖）</span>
