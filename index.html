@@ -361,6 +361,8 @@
             const [redeemSuccess, setRedeemSuccess] = useState(false);      // 兌換成功狀態
             const [isRedeeming,   setIsRedeeming]   = useState(false);      // 兌換中 loading 狀態
             const [isLoadingRedeem, setIsLoadingRedeem] = useState(false);  // 是否正在自雲端載入票券
+            const [isRedeemZoomed, setIsRedeemZoomed] = useState(false);    // 一鍵兌換模式下的條碼放大狀態
+
 
 
             const fileInputRef   = useRef(null);
@@ -407,7 +409,22 @@
                     // 偵測 redeem 一鍵兌換參數
                     const urlParams = new URLSearchParams(window.location.search);
                     const rId = urlParams.get('redeem');
-                    const rGas = urlParams.get('gas');
+                    let rGas = urlParams.get('gas');
+                    if (rGas) {
+                        try {
+                            // 進行雙重解碼，確保不會因為二次編碼而帶有 %2F
+                            rGas = decodeURIComponent(rGas);
+                            if (rGas.includes('%')) {
+                                rGas = decodeURIComponent(rGas);
+                            }
+                            // 確保最後是標準的 /exec，把可能被錯誤編碼或殘留的 %2Fexec、%2Fdev 或 /dev 修正
+                            rGas = rGas.replace(/%2Fdev$/i, '/exec')
+                                       .replace(/\/dev$/i, '/exec')
+                                       .replace(/%2Fexec$/i, '/exec');
+                        } catch(e) {
+                            console.error('Decode rGas error', e);
+                        }
+                    }
                     if (rId) setRedeemId(rId);
                     if (rGas) setRedeemGas(rGas);
                     
@@ -479,7 +496,7 @@
                     const appUrl = window.location.origin + window.location.pathname;
                     await fetch(gasUrl, { 
                         method: 'POST', 
-                        body: JSON.stringify({ tickets: light, lineToken, lineUserId, appUrl }), 
+                        body: JSON.stringify({ tickets: light, lineToken, lineUserId, appUrl, gasUrl }), 
                         mode: 'no-cors',
                         redirect: 'follow' 
                     });
@@ -844,14 +861,23 @@
                                         </div>
 
                                         {/* 圖片條碼區域 */}
-                                        <div className="w-full aspect-video rounded-xl bg-stone-100 border border-stone-200 overflow-hidden relative flex flex-col items-center justify-center p-2">
+                                        <div 
+                                            className="w-full aspect-video rounded-xl bg-stone-100 border border-stone-200 overflow-hidden relative flex flex-col items-center justify-center p-2 cursor-pointer group"
+                                            onClick={() => setIsRedeemZoomed(true)}
+                                        >
                                             {redeemTicket.imageUrl ? (
-                                                <img 
-                                                    src={redeemTicket.imageUrl} 
-                                                    alt="Barcode" 
-                                                    className="w-full h-full object-contain filter drop-shadow-md select-none"
-                                                />
+                                                <>
+                                                    <img 
+                                                        src={redeemTicket.imageUrl} 
+                                                        alt="Barcode" 
+                                                        className="w-full h-full object-contain filter drop-shadow-md select-none"
+                                                    />
+                                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+                                                        <LucideScan className="text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md" size={24}/>
+                                                    </div>
+                                                </>
                                             ) : (
+
 
                                                 <div className="text-stone-400 flex flex-col items-center justify-center gap-2">
                                                     <LucideTicket size={48} className="text-stone-300"/>
@@ -924,9 +950,28 @@
                                 )}
                             </div>
                         </div>
+                        {/* 全螢幕條碼放大檢視 */}
+                        {isRedeemZoomed && redeemTicket && redeemTicket.imageUrl && (
+                            <div 
+                                className="fixed inset-0 z-[100] flex items-center justify-center bg-stone-900/95 backdrop-blur-sm p-4 animate-in fade-in duration-200 cursor-pointer"
+                                onClick={() => setIsRedeemZoomed(false)}
+                            >
+                                <button className="absolute top-6 right-6 text-white/70 hover:text-white p-2"><LucideX size={32}/></button>
+                                <img 
+                                    src={redeemTicket.imageUrl} 
+                                    alt="Zoomed Barcode" 
+                                    className="max-w-full max-h-[80vh] object-contain shadow-2xl rounded-sm select-none"
+                                    onClick={e => e.stopPropagation()}
+                                />
+                                <div className="absolute bottom-10 left-0 w-full text-center pointer-events-none">
+                                    <p className="text-white/50 text-xs tracking-widest font-light">點擊任意處關閉</p>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 );
             }
+
 
             // ── 渲染：主錢包 App ──────────────────────────────────────────────
             return (
