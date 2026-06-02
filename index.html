@@ -621,15 +621,16 @@
                     reader.onload = async ev => {
                         const src = ev.target.result;
                         try {
-                            // 壓縮圖片（最大寬 720px，JPEG 0.5）
+                            // 壓縮圖片（最大寬 600px，JPEG 0.4）
                             const img = await new Promise((res, rej) => {
                                 const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src;
                             });
                             const canvas = document.createElement('canvas');
-                            const scale  = 720 / img.width;
-                            canvas.width = 720; canvas.height = img.height * scale;
+                            const targetWidth = Math.min(600, img.width);
+                            const scale  = targetWidth / img.width;
+                            canvas.width = targetWidth; canvas.height = img.height * scale;
                             canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-                            const b64 = canvas.toDataURL('image/jpeg', 0.5);
+                            const b64 = canvas.toDataURL('image/jpeg', 0.4);
 
                             // 產生票券 id（先佔位）
                             const newId = Date.now().toString();
@@ -689,7 +690,7 @@
                                 imageUrl:    b64,
                                 isUsed:      false,
                                 createdAt:   Date.now(),
-                                notes:       data.rawText || '',
+                                notes:       '',
                                 isNoExpiry:  false,
                                 usedAt:      undefined,
                                 source:      data.source || '',
