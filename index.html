@@ -355,6 +355,10 @@
             const [showSettings,  setShowSettings]  = useState(false);
             const [showDelAll,    setShowDelAll]    = useState(false);
             const [draftId,       setDraftId]       = useState(null);
+            const [redeemId,      setRedeemId]      = useState(null);       // URL 中傳入的票券 ID
+            const [redeemTicket,  setRedeemTicket]  = useState(null);       // 兌換模式對應的票券資料
+            const [redeemSuccess, setRedeemSuccess] = useState(false);      // 兌換成功狀態
+            const [isRedeeming,   setIsRedeeming]   = useState(false);      // 兌換中 loading 狀態
 
             const fileInputRef   = useRef(null);
             const importFileRef  = useRef(null);
@@ -396,10 +400,26 @@
                         const db = await get(STORAGE_KEY);
                         if (db && Array.isArray(db)) setTickets(db);
                     } catch(e) { console.error('IDB Load Error', e); }
+                    
+                    // 偵測 redeem 一鍵兌換參數
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const rId = urlParams.get('redeem');
+                    if (rId) setRedeemId(rId);
+                    
                     setIsLoaded(true);
                 };
                 init();
             }, []);
+
+            // ── 偵測一鍵兌換票券 ───────────────────────────────────────────────
+            useEffect(() => {
+                if (isLoaded && redeemId) {
+                    const found = tickets.find(t => t.id === redeemId);
+                    if (found) {
+                        setRedeemTicket(found);
+                    }
+                }
+            }, [tickets, isLoaded, redeemId]);
 
             // ── 設定持久化 ────────────────────────────────────────────────────
             useEffect(() => { localStorage.setItem(APP_TITLE_KEY, appTitle); document.title = `${appTitle} - E-Ticket Wallet`; }, [appTitle]);
@@ -420,9 +440,10 @@
                 if (!gasUrl || !gasUrl.startsWith('https://script.google.com/')) return;
                 try {
                     const light = ticketsList.map(({ imageUrl, ...rest }) => rest);
+                    const appUrl = window.location.origin + window.location.pathname;
                     await fetch(gasUrl, { 
                         method: 'POST', 
-                        body: JSON.stringify({ tickets: light, lineToken, lineUserId }), 
+                        body: JSON.stringify({ tickets: light, lineToken, lineUserId, appUrl }), 
                         mode: 'no-cors',
                         redirect: 'follow' 
                     });
@@ -448,6 +469,40 @@
                     alert(`同步失敗：${e.message}\n請檢查您的 Google Script URL 是否貼錯，或請重試。`);
                 } finally {
                     setIsSyncing(false);
+                }
+            };
+
+            // ── 一鍵兌換確認 ──────────────────────────────────────────────────
+            const handleRedeemConfirm = async () => {
+                if (isRedeeming) return;
+                setIsRedeeming(true);
+                try {
+                    // 1. 同步通知雲端試算表標記已使用
+                    if (gasUrl && gasUrl.startsWith('https://script.google.com/')) {
+                        await fetch(gasUrl, {
+                            method: 'POST',
+                            body: JSON.stringify({ action: 'useTicket', ticketId: redeemId }),
+                            mode: 'no-cors'
+                        });
+                    }
+                    // 2. 更新本機 state 與 IndexedDB 狀態
+                    const updatedUsedDate = todayStr();
+                    const updatedUsedAt = Date.now();
+                    setTickets(prev => prev.map(t => {
+                        if (t.id !== redeemId) return t;
+                        return {
+                            ...t,
+                            isUsed: true,
+                            usedAt: updatedUsedAt,
+                            usedDate: updatedUsedDate
+                        };
+                    }));
+                    setRedeemSuccess(true);
+                } catch(e) {
+                    console.error(e);
+                    alert('標記已使用失敗，請確認網路連線。');
+                } finally {
+                    setIsRedeeming(false);
                 }
             };
 
@@ -558,8 +613,8 @@
                                 notes:       data.rawText || '',
                                 isNoExpiry:  false,
                                 usedAt:      undefined,
-                                usedDate:    undefined,
                                 source:      data.source || '',
+                                owner:       '自己',      // 新增：預設提醒對象為自己
                                 driveFileId: driveFileId  // Drive 檔案 ID（可能為 undefined）
                             };
 
@@ -588,7 +643,8 @@
                     expiryDate: new Date().toISOString().split('T')[0],
                     price: undefined, imageUrl: '', isUsed: false,
                     createdAt: Date.now(), notes: '', isNoExpiry: false,
-                    usedAt: undefined, usedDate: undefined, source: ''
+                    usedAt: undefined, usedDate: undefined, source: '',
+                    owner: '自己' // 新增：預設提醒對象為自己
                 };
                 setTickets(prev => [newTicket, ...prev]);
                 setDetailsId(newTicket.id); setDraftId(newTicket.id);
@@ -706,7 +762,128 @@
                 expired:   tickets.filter(t => !t.isUsed && checkIsExpired(t.expiryDate, t.isNoExpiry)).length,
             }), [tickets]);
 
-            // ── 渲染 ──────────────────────────────────────────────────────────
+            // ── 渲染：一鍵兌換模式 ──────────────────────────────────────────────
+            if (redeemId) {
+                return (
+                    <div className="min-h-screen w-full bg-[#f5f5f1] text-stone-800 font-sans flex items-center justify-center p-4">
+                        <div className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden border border-stone-200/50 flex flex-col">
+                            {/* 標題列 */}
+                            <div className="px-6 py-5 border-b border-stone-100 flex justify-between items-center bg-stone-50/50">
+                                <h3 className="text-lg font-bold text-stone-800 flex items-center gap-2">
+                                    <LucideSparkles className="text-pink-500" size={20}/>
+                                    票券快速兌換
+                                </h3>
+                                <button 
+                                    onClick={() => window.location.href = window.location.origin + window.location.pathname}
+                                    className="text-xs font-bold text-stone-400 hover:text-stone-800 transition-colors flex items-center gap-1"
+                                >
+                                    回小金庫 App <LucideExternalLink size={12}/>
+                                </button>
+                            </div>
+
+                            {/* 內容 */}
+                            <div className="p-6 flex-grow flex flex-col justify-between min-h-[50vh] space-y-6">
+                                {redeemTicket ? (
+                                    <>
+                                        <div className="text-center space-y-2">
+                                            <p className="text-[10px] tracking-[0.2em] text-pink-500 font-bold uppercase">
+                                                {redeemTicket.storeName || '使用店家'}
+                                            </p>
+                                            <h2 className="text-xl font-bold text-stone-800 leading-tight">
+                                                {redeemTicket.itemName || '兌換品項'}
+                                            </h2>
+                                            {redeemTicket.price ? (
+                                                <p className="text-sm font-semibold text-stone-500 mt-1">
+                                                    NT$ {redeemTicket.price}
+                                                </p>
+                                            ) : null}
+                                        </div>
+
+                                        {/* 圖片條碼區域 */}
+                                        <div className="w-full aspect-video rounded-xl bg-stone-100 border border-stone-200 overflow-hidden relative flex flex-col items-center justify-center p-2">
+                                            {redeemTicket.imageUrl ? (
+                                                <img 
+                                                    src={redeemTicket.imageUrl} 
+                                                    alt="Barcode" 
+                                                    className="w-full h-full object-contain filter drop-shadow-md select-none"
+                                                />
+                                            ) : (
+                                                <div className="text-stone-400 flex flex-col items-center justify-center gap-2">
+                                                    <LucideTicket size={48} className="text-stone-300"/>
+                                                    <span className="text-xs font-bold">純文字提醒票券（無條碼截圖）</span>
+                                                    {redeemTicket.authCode && (
+                                                        <span className="text-base font-mono font-bold text-stone-700 bg-stone-200 px-3 py-1 rounded-lg mt-2">
+                                                            {redeemTicket.authCode}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* 到期日 */}
+                                        <div className="flex items-center justify-center gap-2 text-xs py-2 px-3 bg-stone-50 rounded-lg border border-stone-100 font-medium">
+                                            <LucideCalendar size={14} className="text-stone-400"/>
+                                            <span>有效期限：</span>
+                                            <span className={checkIsExpired(redeemTicket.expiryDate, redeemTicket.isNoExpiry) ? 'text-red-500 font-bold' : 'text-stone-600'}>
+                                                {redeemTicket.isNoExpiry ? '無期限' : redeemTicket.expiryDate.replace(/-/g, '.')}
+                                            </span>
+                                        </div>
+
+                                        {/* 備註欄 (有資料才顯示) */}
+                                        {redeemTicket.notes ? (
+                                            <div className="bg-stone-50 border border-stone-100 rounded-xl p-3 text-xs text-stone-600 space-y-1">
+                                                <p className="font-bold text-stone-400 text-[10px] tracking-wider uppercase">備註說明</p>
+                                                <p className="leading-relaxed whitespace-pre-wrap">{redeemTicket.notes}</p>
+                                            </div>
+                                        ) : null}
+
+                                        {/* 控制按鈕 */}
+                                        <div className="pt-4 border-t border-stone-100">
+                                            {redeemTicket.isUsed || redeemSuccess ? (
+                                                <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 text-center space-y-2 animate-in zoom-in-95 duration-200">
+                                                    <LucideCheckCircle size={32} className="mx-auto text-emerald-500"/>
+                                                    <p className="text-sm font-bold text-emerald-800">此票券已成功兌換完成！</p>
+                                                    <p className="text-[10px] text-emerald-600">已自動同步至您的雲端試算表與錢包</p>
+                                                </div>
+                                            ) : (
+                                                <button 
+                                                    onClick={handleRedeemConfirm}
+                                                    disabled={isRedeeming}
+                                                    className={`w-full py-4 rounded-xl bg-stone-800 text-white font-medium text-sm tracking-widest transition-all hover:bg-stone-700 active:scale-[0.98] shadow-lg flex items-center justify-center gap-2
+                                                        ${isRedeeming ? 'opacity-80 cursor-wait' : ''}`}
+                                                >
+                                                    {isRedeeming ? (
+                                                        <LucideLoader2 className="animate-spin" size={16}/>
+                                                    ) : (
+                                                        <LucideCheckCircle size={16}/>
+                                                    )}
+                                                    <span>{isRedeeming ? '處理中...' : '✅ 我已兌換完成'}</span>
+                                                </button>
+                                            )}
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="text-center py-12 space-y-4">
+                                        <LucideAlertTriangle className="text-amber-500 mx-auto animate-bounce" size={48}/>
+                                        <h3 className="text-base font-bold text-stone-800">找不到此票券資料</h3>
+                                        <p className="text-xs text-stone-400 leading-relaxed max-w-[250px] mx-auto">
+                                            此票券可能已被刪除，或是您尚未與此 Google 帳號的試算表進行同步。
+                                        </p>
+                                        <button 
+                                            onClick={() => window.location.href = window.location.origin + window.location.pathname}
+                                            className="px-4 py-2 bg-stone-800 text-white rounded-lg text-xs font-medium hover:bg-stone-700 transition-colors"
+                                        >
+                                            回小金庫主畫面
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // ── 渲染：主錢包 App ──────────────────────────────────────────────
             return (
                 <div className="min-h-screen w-full bg-[#f5f5f1] pb-32 relative text-stone-800 font-sans selection:bg-stone-200">
                 <div className="max-w-md mx-auto min-h-screen bg-[#f5f5f1] shadow-2xl overflow-hidden relative flex flex-col">
@@ -969,6 +1146,12 @@
                                             <input type="text" className="w-full text-sm border-b border-stone-200 focus:border-stone-800 outline-none pb-1 font-mono tracking-wider bg-transparent placeholder-stone-300"
                                                 placeholder="輸入序號..." value={detailsTicket.authCode||''}
                                                 onChange={e => updateField(detailsTicket.id,'authCode',e.target.value)}/>
+                                        </div>
+                                        <div>
+                                            <label className="flex items-center gap-1.5 text-[10px] tracking-widest text-stone-400 uppercase font-bold mb-2"><LucideSmartphone size={12}/>指定提醒對象 (LINE)</label>
+                                            <input type="text" className="w-full text-sm border-b border-stone-200 focus:border-stone-800 outline-none pb-1 font-medium bg-transparent placeholder-stone-300 text-stone-800"
+                                                placeholder="預設為「自己」，可填：老公、妹妹 等" value={detailsTicket.owner||''}
+                                                onChange={e => updateField(detailsTicket.id,'owner',e.target.value)}/>
                                         </div>
                                         <div>
                                             <div className="flex justify-between items-center mb-2">
