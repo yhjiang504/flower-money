@@ -39,6 +39,450 @@
     </style>
 </head>
 <body>
+    <!-- 🚀 一鍵快速兌換 — 極速原生 JS 攔截與渲染 🚀 -->
+    <script>
+        (function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const redeemId = urlParams.get('redeem');
+            let redeemGas = urlParams.get('gas');
+            
+            if (redeemId) {
+                // 動態插入一組極簡美觀的原生 CSS，用於極速渲染
+                const style = document.createElement('style');
+                style.innerHTML = `
+                    #fast-redeem-app {
+                        position: fixed;
+                        top: 0; left: 0; right: 0; bottom: 0;
+                        background-color: #f5f5f1;
+                        z-index: 99999;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        padding: 16px;
+                        font-family: system-ui, -apple-system, sans-serif;
+                        color: #1c1917;
+                    }
+                    .redeem-card {
+                        background: #ffffff;
+                        width: 100%;
+                        max-width: 400px;
+                        border-radius: 16px;
+                        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+                        border: 1px solid rgba(120, 113, 108, 0.15);
+                        overflow: hidden;
+                        display: flex;
+                        flex-direction: column;
+                    }
+                    .redeem-header {
+                        padding: 20px 24px;
+                        border-bottom: 1px solid #f5f5f4;
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        background: rgba(120, 113, 108, 0.02);
+                    }
+                    .redeem-title {
+                        margin: 0;
+                        font-size: 18px;
+                        font-weight: 700;
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                    }
+                    .redeem-content {
+                        padding: 24px;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 24px;
+                    }
+                    .redeem-info {
+                        text-align: center;
+                    }
+                    .store-name {
+                        font-size: 11px;
+                        font-weight: 700;
+                        letter-spacing: 0.15em;
+                        color: #ec4899;
+                        text-transform: uppercase;
+                        margin: 0 0 6px 0;
+                    }
+                    .item-name {
+                        font-size: 20px;
+                        font-weight: 700;
+                        color: #1c1917;
+                        line-height: 1.3;
+                        margin: 0;
+                    }
+                    .price-tag {
+                        font-size: 14px;
+                        font-weight: 600;
+                        color: #78716c;
+                        margin: 6px 0 0 0;
+                    }
+                    .img-area {
+                        width: 100%;
+                        aspect-ratio: 16/9;
+                        border-radius: 12px;
+                        background: #f5f5f4;
+                        border: 1px solid #e7e5e4;
+                        overflow: hidden;
+                        position: relative;
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        justify-content: center;
+                        cursor: pointer;
+                    }
+                    .barcode-img {
+                        width: 100%;
+                        height: 100%;
+                        object-fit: contain;
+                    }
+                    .text-only-badge {
+                        color: #a8a29e;
+                        font-size: 13px;
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        gap: 8px;
+                    }
+                    .auth-code {
+                        font-family: monospace;
+                        font-weight: 700;
+                        font-size: 16px;
+                        color: #44403c;
+                        background: #e7e5e4;
+                        padding: 4px 12px;
+                        border-radius: 8px;
+                        margin-top: 8px;
+                    }
+                    .expiry-box {
+                        font-size: 13px;
+                        padding: 10px 12px;
+                        background: #fafaf9;
+                        border-radius: 8px;
+                        border: 1px solid #f5f5f4;
+                        text-align: center;
+                        font-weight: 500;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        gap: 6px;
+                    }
+                    .notes-box {
+                        background: #fafaf9;
+                        border: 1px solid #f5f5f4;
+                        border-radius: 12px;
+                        padding: 12px;
+                        font-size: 12px;
+                        color: #57534e;
+                        line-height: 1.5;
+                        text-align: left;
+                    }
+                    .notes-title {
+                        font-size: 10px;
+                        font-weight: 700;
+                        color: #a8a29e;
+                        letter-spacing: 0.05em;
+                        margin: 0 0 4px 0;
+                        text-transform: uppercase;
+                    }
+                    .notes-body {
+                        margin: 0;
+                        white-space: pre-wrap;
+                    }
+                    .btn-redeem {
+                        width: 100%;
+                        padding: 14px;
+                        border-radius: 12px;
+                        background: #1c1917;
+                        color: #ffffff;
+                        font-weight: 600;
+                        font-size: 14px;
+                        border: none;
+                        cursor: pointer;
+                        transition: all 0.2s;
+                        box-shadow: 0 4px 12px rgba(28, 25, 23, 0.15);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 8px;
+                    }
+                    .btn-redeem:active {
+                        transform: scale(0.98);
+                    }
+                    .btn-redeem:disabled {
+                        opacity: 0.6;
+                        cursor: not-allowed;
+                    }
+                    .success-box {
+                        background: #ecfdf5;
+                        border: 1px solid #d1fae5;
+                        border-radius: 12px;
+                        padding: 16px;
+                        text-align: center;
+                        color: #065f46;
+                    }
+                    .success-title {
+                        font-size: 15px;
+                        font-weight: 700;
+                        margin: 0 0 4px 0;
+                    }
+                    .success-sub {
+                        font-size: 11px;
+                        color: #047857;
+                        margin: 0;
+                    }
+                    .loader-container {
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        justify-content: center;
+                        padding: 40px 0;
+                        color: #a8a29e;
+                        gap: 12px;
+                    }
+                    .spinner {
+                        width: 32px;
+                        height: 32px;
+                        border: 3px solid rgba(120, 113, 108, 0.1);
+                        border-radius: 50%;
+                        border-top-color: #78716c;
+                        animation: spin 0.8s linear infinite;
+                    }
+                    @keyframes spin {
+                        to { transform: rotate(360deg); }
+                    }
+                    .zoomed-overlay {
+                        position: fixed;
+                        top: 0; left: 0; right: 0; bottom: 0;
+                        background: rgba(28, 25, 23, 0.95);
+                        z-index: 100000;
+                        display: none;
+                        align-items: center;
+                        justify-content: center;
+                        padding: 16px;
+                        cursor: pointer;
+                    }
+                    .zoomed-img {
+                        max-width: 100%;
+                        max-height: 80vh;
+                        object-fit: contain;
+                        border-radius: 4px;
+                        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+                    }
+                `;
+                document.head.appendChild(style);
+                
+                // 動態插入原生 DOM 結構
+                document.write(`
+                    <div id="fast-redeem-app">
+                        <div class="redeem-card">
+                            <div class="redeem-header">
+                                <h3 class="redeem-title">
+                                    <span style="color:#ec4899;">🌸</span> 票券快速兌換
+                                </h3>
+                                <a href="\${window.location.origin + window.location.pathname}" style="font-size:12px; color:#78716c; text-decoration:none; font-weight:700;">
+                                    回小金庫 App ↗
+                                </a>
+                            </div>
+                            <div class="redeem-content" id="redeem-main-content">
+                                <div class="loader-container" id="redeem-loader">
+                                    <div class="spinner"></div>
+                                    <span style="font-size:13px; font-weight:500;">正在從雲端載入票券資訊...</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="zoomed-overlay" id="zoomed-view">
+                        <img src="" class="zoomed-img" id="zoomed-img-el">
+                        <div style="position:absolute; bottom:40px; width:100%; text-align:center; color:rgba(255,255,255,0.5); font-size:12px; pointer-events:none;">點擊任意處關閉</div>
+                    </div>
+                `);
+                
+                // 網頁載入後，向 GAS 請求票券資料
+                window.addEventListener('DOMContentLoaded', async () => {
+                    const contentArea = document.getElementById('redeem-main-content');
+                    const zoomedView = document.getElementById('zoomed-view');
+                    const zoomedImgEl = document.getElementById('zoomed-img-el');
+                    
+                    zoomedView.addEventListener('click', () => {
+                        zoomedView.style.display = 'none';
+                    });
+                    
+                    // 獲取 GAS 網址 (優先從 URL 參數，其次從 localStorage)
+                    let activeGasUrl = redeemGas;
+                    if (!activeGasUrl) {
+                        activeGasUrl = localStorage.getItem('e_ticket_wallet_gas_url');
+                    }
+                    
+                    if (activeGasUrl) {
+                        try {
+                            activeGasUrl = decodeURIComponent(activeGasUrl);
+                            if (activeGasUrl.includes('%')) {
+                                activeGasUrl = decodeURIComponent(activeGasUrl);
+                            }
+                            activeGasUrl = activeGasUrl.replace(/%2Fdev$/i, '/exec')
+                                                       .replace(/\/dev$/i, '/exec')
+                                                       .replace(/%2Fexec$/i, '/exec');
+                        } catch(e) {
+                            console.error(e);
+                        }
+                    }
+                    
+                    if (!activeGasUrl || !activeGasUrl.startsWith('https://script.google.com/')) {
+                        contentArea.innerHTML = `
+                            <div style="text-align:center; padding:20px 0; color:#dc2626;">
+                                <h4 style="margin:0 0 8px 0; font-size:16px;">設定錯誤</h4>
+                                <p style="margin:0; font-size:12px; color:#78716c; line-height:1.5;">找不到有效的 Google Apps Script 網址，無法從雲端載入票券。<br>請確認小金庫 App 的 GAS 網址設定正確，或在分享的連結中帶有完整的網址參數。</p>
+                            </div>
+                        `;
+                        return;
+                    }
+                    
+                    let ticket = null;
+                    // 向 GAS 獲取單張票券
+                    try {
+                        const separator = activeGasUrl.includes('?') ? '&' : '?';
+                        const url = \`\${activeGasUrl}\${separator}action=getTicket&ticketId=\${redeemId}\`;
+                        const res = await fetch(url, { method: 'GET', redirect: 'follow' });
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (data.success && data.ticket) {
+                                ticket = data.ticket;
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Fetch ticket error:', e);
+                    }
+                    
+                    if (!ticket) {
+                        contentArea.innerHTML = `
+                            <div style="text-align:center; padding:20px 0; color:#ea580c;">
+                                <h4 style="margin:0 0 8px 0; font-size:16px;">找不到票券</h4>
+                                <p style="margin:0; font-size:12px; color:#78716c; line-height:1.5;">此票券可能已被刪除，或是您尚未同步至試算表。</p>
+                                <button onclick="window.location.href='\\\${window.location.origin + window.location.pathname}'" style="margin-top:16px; padding:8px 16px; border:1px solid #78716c; background:#ffffff; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer;">回小金庫主畫面</button>
+                            </div>
+                        `;
+                        return;
+                    }
+                    
+                    // 渲染票券內容
+                    let imgHtml = '';
+                    if (ticket.imageUrl) {
+                        imgHtml = `
+                            <div class="img-area" id="trigger-zoom">
+                                <img src="\${ticket.imageUrl}" class="barcode-img" alt="Barcode">
+                            </div>
+                        `;
+                    } else {
+                        let authHtml = ticket.authCode ? \`<div class="auth-code">\${ticket.authCode}</div>\` : '';
+                        imgHtml = `
+                            <div class="img-area" style="cursor:default;">
+                                <div class="text-only-badge">
+                                    <span style="font-size:24px;">🎫</span>
+                                    <span style="font-weight:600; font-size:12px;">純文字提醒票券（無條碼截圖）</span>
+                                    \${authHtml}
+                                </div>
+                            </div>
+                        `;
+                    }
+                    
+                    let priceHtml = ticket.price ? \`<p class="price-tag">NT$ \${ticket.price}</p>\` : '';
+                    let notesHtml = ticket.notes ? \`
+                        <div class="notes-box">
+                            <h4 class="notes-title">備註說明</h4>
+                            <p class="notes-body">\${ticket.notes}</p>
+                        </div>
+                    \` : '';
+                    
+                    const cleanDate = ticket.expiryDate ? ticket.expiryDate.replace(/-/g, '.') : '';
+                    const isExpired = (function() {
+                        if (ticket.isNoExpiry) return false;
+                        const today = new Date(); today.setHours(0, 0, 0, 0);
+                        const exp = new Date(ticket.expiryDate);
+                        return !isNaN(exp.getTime()) && exp < today;
+                    })();
+                    
+                    const dateColor = isExpired ? '#dc2626' : '#57534e';
+                    const dateText = ticket.isNoExpiry ? '無期限' : \`\${cleanDate}\${isExpired ? ' (已過期)' : ''}\`;
+                    
+                    let buttonOrSuccessHtml = '';
+                    if (ticket.isUsed) {
+                        buttonOrSuccessHtml = `
+                            <div class="success-box">
+                                <h4 class="success-title">✓ 此票券已成功兌換！</h4>
+                                <p class="success-sub">已自動同步至您的雲端試算表與錢包</p>
+                            </div>
+                        `;
+                    } else {
+                        buttonOrSuccessHtml = `
+                            <button class="btn-redeem" id="btn-confirm-redeem">
+                                <span>我已兌換完成</span>
+                            </button>
+                        `;
+                    }
+                    
+                    contentArea.innerHTML = `
+                        <div class="redeem-info">
+                            <p class="store-name">\${ticket.storeName || '使用店家'}</p>
+                            <h2 class="item-name">\${ticket.itemName || '兌換品項'}</h2>
+                            \${priceHtml}
+                        </div>
+                        
+                        \${imgHtml}
+                        
+                        <div class="expiry-box" style="color: \${dateColor}">
+                            <span>📅 有效期限：</span>
+                            <strong>\${dateText}</strong>
+                        </div>
+                        
+                        \${notesHtml}
+                        
+                        <div style="border-top: 1px solid #f5f5f4; padding-top: 16px;" id="action-area">
+                            \${buttonOrSuccessHtml}
+                        </div>
+                    `;
+                    
+                    // 綁定條碼放大事件
+                    const triggerZoom = document.getElementById('trigger-zoom');
+                    if (triggerZoom) {
+                        triggerZoom.addEventListener('click', () => {
+                            zoomedImgEl.src = ticket.imageUrl;
+                            zoomedView.style.display = 'flex';
+                        });
+                    }
+                    
+                    // 綁定確認兌換事件 (樂觀更新)
+                    const btnConfirm = document.getElementById('btn-confirm-redeem');
+                    if (btnConfirm) {
+                        btnConfirm.addEventListener('click', async () => {
+                            btnConfirm.disabled = true;
+                            btnConfirm.innerText = '處理中...';
+                            
+                            const actionArea = document.getElementById('action-area');
+                            actionArea.innerHTML = `
+                                <div class="success-box">
+                                    <h4 class="success-title">✓ 此票券已成功兌換！</h4>
+                                    <p class="success-sub">已自動同步至您的雲端試算表與錢包</p>
+                                </div>
+                            `;
+                            
+                            // 發送標記已使用請求
+                            try {
+                                fetch(activeGasUrl, {
+                                    method: 'POST',
+                                    body: JSON.stringify({ action: 'useTicket', ticketId: redeemId })
+                                });
+                            } catch(e) {
+                                console.error(e);
+                            }
+                        });
+                    }
+                });
+            }
+        })();
+    </script>
     <div id="root"></div>
 
     <script type="text/babel" data-type="module">
@@ -1517,8 +1961,11 @@
             );
         };
 
-        const root = createRoot(document.getElementById('root'));
-        root.render(<App/>);
+        // 🚀 兌換模式下，React 不啟動以節省手機 CPU 開銷，交由 Vanilla JS 原生極速版處理 🚀
+        if (!window.location.search.includes('redeem=')) {
+            const root = createRoot(document.getElementById('root'));
+            root.render(<App/>);
+        }
     </script>
     
     <!-- 註冊 Service Worker 並偵測更新自動重新整理 -->
