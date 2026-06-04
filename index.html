@@ -282,7 +282,7 @@
                                 <h3 class="redeem-title">
                                     <span style="color:#ec4899;">🌸</span> 票券快速兌換
                                 </h3>
-                                <a href="\${window.location.origin + window.location.pathname}" style="font-size:12px; color:#78716c; text-decoration:none; font-weight:700;">
+                                <a href="${window.location.origin + window.location.pathname}" style="font-size:12px; color:#78716c; text-decoration:none; font-weight:700;">
                                     回小金庫 App ↗
                                 </a>
                             </div>
@@ -344,7 +344,7 @@
                     // 向 GAS 獲取單張票券
                     try {
                         const separator = activeGasUrl.includes('?') ? '&' : '?';
-                        const url = \`\${activeGasUrl}\${separator}action=getTicket&ticketId=\${redeemId}\`;
+                        const url = `${activeGasUrl}${separator}action=getTicket&ticketId=${redeemId}`;
                         const res = await fetch(url, { method: 'GET', redirect: 'follow' });
                         if (res.ok) {
                             const data = await res.json();
@@ -361,7 +361,7 @@
                             <div style="text-align:center; padding:20px 0; color:#ea580c;">
                                 <h4 style="margin:0 0 8px 0; font-size:16px;">找不到票券</h4>
                                 <p style="margin:0; font-size:12px; color:#78716c; line-height:1.5;">此票券可能已被刪除，或是您尚未同步至試算表。</p>
-                                <button onclick="window.location.href='\\\${window.location.origin + window.location.pathname}'" style="margin-top:16px; padding:8px 16px; border:1px solid #78716c; background:#ffffff; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer;">回小金庫主畫面</button>
+                                <button onclick="window.location.href=window.location.origin + window.location.pathname" style="margin-top:16px; padding:8px 16px; border:1px solid #78716c; background:#ffffff; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer;">回小金庫主畫面</button>
                             </div>
                         `;
                         return;
@@ -372,29 +372,29 @@
                     if (ticket.imageUrl) {
                         imgHtml = `
                             <div class="img-area" id="trigger-zoom">
-                                <img src="\${ticket.imageUrl}" class="barcode-img" alt="Barcode">
+                                <img src="${ticket.imageUrl}" class="barcode-img" alt="Barcode">
                             </div>
                         `;
                     } else {
-                        let authHtml = ticket.authCode ? \`<div class="auth-code">\${ticket.authCode}</div>\` : '';
+                        let authHtml = ticket.authCode ? `<div class="auth-code">${ticket.authCode}</div>` : '';
                         imgHtml = `
                             <div class="img-area" style="cursor:default;">
                                 <div class="text-only-badge">
                                     <span style="font-size:24px;">🎫</span>
                                     <span style="font-weight:600; font-size:12px;">純文字提醒票券（無條碼截圖）</span>
-                                    \${authHtml}
+                                    ${authHtml}
                                 </div>
                             </div>
                         `;
                     }
                     
-                    let priceHtml = ticket.price ? \`<p class="price-tag">NT$ \${ticket.price}</p>\` : '';
-                    let notesHtml = ticket.notes ? \`
+                    let priceHtml = ticket.price ? `<p class="price-tag">NT$ ${ticket.price}</p>` : '';
+                    let notesHtml = ticket.notes ? `
                         <div class="notes-box">
                             <h4 class="notes-title">備註說明</h4>
-                            <p class="notes-body">\${ticket.notes}</p>
+                            <p class="notes-body">${ticket.notes}</p>
                         </div>
-                    \` : '';
+                    ` : '';
                     
                     const cleanDate = ticket.expiryDate ? ticket.expiryDate.replace(/-/g, '.') : '';
                     const isExpired = (function() {
@@ -405,7 +405,7 @@
                     })();
                     
                     const dateColor = isExpired ? '#dc2626' : '#57534e';
-                    const dateText = ticket.isNoExpiry ? '無期限' : \`\${cleanDate}\${isExpired ? ' (已過期)' : ''}\`;
+                    const dateText = ticket.isNoExpiry ? '無期限' : `${cleanDate}${isExpired ? ' (已過期)' : ''}`;
                     
                     let buttonOrSuccessHtml = '';
                     if (ticket.isUsed) {
@@ -425,22 +425,22 @@
                     
                     contentArea.innerHTML = `
                         <div class="redeem-info">
-                            <p class="store-name">\${ticket.storeName || '使用店家'}</p>
-                            <h2 class="item-name">\${ticket.itemName || '兌換品項'}</h2>
-                            \${priceHtml}
+                            <p class="store-name">${ticket.storeName || '使用店家'}</p>
+                            <h2 class="item-name">${ticket.itemName || '兌換品項'}</h2>
+                            ${priceHtml}
                         </div>
                         
-                        \${imgHtml}
+                        ${imgHtml}
                         
-                        <div class="expiry-box" style="color: \${dateColor}">
+                        <div class="expiry-box" style="color: ${dateColor}">
                             <span>📅 有效期限：</span>
-                            <strong>\${dateText}</strong>
+                            <strong>${dateText}</strong>
                         </div>
                         
-                        \${notesHtml}
+                        ${notesHtml}
                         
                         <div style="border-top: 1px solid #f5f5f4; padding-top: 16px;" id="action-area">
-                            \${buttonOrSuccessHtml}
+                            ${buttonOrSuccessHtml}
                         </div>
                     `;
                     
@@ -465,6 +465,24 @@
                                 <div class="success-box">
                                     <h4 class="success-title">✓ 此票券已成功兌換！</h4>
                                     <p class="success-sub">已自動同步至您的雲端試算表與錢包</p>
+                                </div>
+                            `;
+                            
+                            // 發送標記已使用請求
+                            try {
+                                fetch(activeGasUrl, {
+                                    method: 'POST',
+                                    body: JSON.stringify({ action: 'useTicket', ticketId: redeemId })
+                                });
+                            } catch(e) {
+                                console.error(e);
+                            }
+                        });
+                    }
+                });
+            });
+        })();
+    </script>�與錢包</p>
                                 </div>
                             `;
                             
