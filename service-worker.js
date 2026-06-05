@@ -1,49 +1,1997 @@
-// 🌸 花花大金庫 V3.6 Service Worker
-// 版本更新時，改這裡的版本號即可強制手機更新快取
-const CACHE_NAME = 'flower-money-v3.6.3';
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>花花的小金庫 - E-Ticket Wallet</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
 
-// 安裝階段：快取核心資源
-self.addEventListener('install', e => {
-  self.skipWaiting(); // 立刻插隊取代舊版
-  e.waitUntil(
-    caches.open(CACHE_NAME).then(cache =>
-      cache.addAll(['./', './index.html', './icon.png'])
-    )
-  );
-});
-
-// 啟動階段：清除所有舊版快取
-self.addEventListener('activate', e => {
-  e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.map(key => {
-        if (key !== CACHE_NAME) {
-          console.log('🗑️ 刪除舊快取:', key);
-          return caches.delete(key);
+    <!-- React & ReactDOM & Babel -->
+    <script type="importmap">
+        {
+            "imports": {
+                "react": "https://esm.sh/react@18.2.0",
+                "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+                "lucide-react": "https://esm.sh/lucide-react@0.468.0?deps=react@18.2.0",
+                "idb-keyval": "https://esm.sh/idb-keyval@6.2.1"
+            }
         }
-      }))
-    )
-  );
-  return self.clients.claim(); // 立刻接管所有分頁
-});
+    </script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <style>
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background-color: #d6d3d1; border-radius: 20px; }
+        body {
+            background-color: #f5f5f1;
+            font-family: system-ui, -apple-system, sans-serif;
+            overscroll-behavior-y: none;
+        }
+        .cursor-wait { cursor: wait; }
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(16px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        .animate-slide-up { animation: slideUp 0.4s ease both; }
+    </style>
+</head>
+<body>
+    <!-- 🚀 一鍵快速兌換 — 極速原生 JS 攔截與渲染 🚀 -->
+    <script>
+        (function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const redeemId = urlParams.get('redeem');
+            let redeemGas = urlParams.get('gas');
+            
+            if (redeemId) {
+                // 動態插入一組極簡美觀的原生 CSS，用於極速渲染
+                const style = document.createElement('style');
+                style.innerHTML = `
+                    #fast-redeem-app {
+                        position: fixed;
+                        top: 0; left: 0; right: 0; bottom: 0;
+                        background-color: #f5f5f1;
+                        z-index: 99999;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        padding: 16px;
+                        font-family: system-ui, -apple-system, sans-serif;
+                        color: #1c1917;
+                    }
+                    .redeem-card {
+                        background: #ffffff;
+                        width: 100%;
+                        max-width: 400px;
+                        border-radius: 16px;
+                        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+                        border: 1px solid rgba(120, 113, 108, 0.15);
+                        overflow: hidden;
+                        display: flex;
+                        flex-direction: column;
+                    }
+                    .redeem-header {
+                        padding: 20px 24px;
+                        border-bottom: 1px solid #f5f5f4;
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        background: rgba(120, 113, 108, 0.02);
+                    }
+                    .redeem-title {
+                        margin: 0;
+                        font-size: 18px;
+                        font-weight: 700;
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                    }
+                    .redeem-content {
+                        padding: 24px;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 24px;
+                    }
+                    .redeem-info {
+                        text-align: center;
+                    }
+                    .store-name {
+                        font-size: 11px;
+                        font-weight: 700;
+                        letter-spacing: 0.15em;
+                        color: #ec4899;
+                        text-transform: uppercase;
+                        margin: 0 0 6px 0;
+                    }
+                    .item-name {
+                        font-size: 20px;
+                        font-weight: 700;
+                        color: #1c1917;
+                        line-height: 1.3;
+                        margin: 0;
+                    }
+                    .price-tag {
+                        font-size: 14px;
+                        font-weight: 600;
+                        color: #78716c;
+                        margin: 6px 0 0 0;
+                    }
+                    .img-area {
+                        width: 100%;
+                        aspect-ratio: 16/9;
+                        border-radius: 12px;
+                        background: #f5f5f4;
+                        border: 1px solid #e7e5e4;
+                        overflow: hidden;
+                        position: relative;
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        justify-content: center;
+                        cursor: pointer;
+                    }
+                    .barcode-img {
+                        width: 100%;
+                        height: 100%;
+                        object-fit: contain;
+                    }
+                    .text-only-badge {
+                        color: #a8a29e;
+                        font-size: 13px;
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        gap: 8px;
+                    }
+                    .auth-code {
+                        font-family: monospace;
+                        font-weight: 700;
+                        font-size: 16px;
+                        color: #44403c;
+                        background: #e7e5e4;
+                        padding: 4px 12px;
+                        border-radius: 8px;
+                        margin-top: 8px;
+                    }
+                    .expiry-box {
+                        font-size: 13px;
+                        padding: 10px 12px;
+                        background: #fafaf9;
+                        border-radius: 8px;
+                        border: 1px solid #f5f5f4;
+                        text-align: center;
+                        font-weight: 500;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        gap: 6px;
+                    }
+                    .notes-box {
+                        background: #fafaf9;
+                        border: 1px solid #f5f5f4;
+                        border-radius: 12px;
+                        padding: 12px;
+                        font-size: 12px;
+                        color: #57534e;
+                        line-height: 1.5;
+                        text-align: left;
+                    }
+                    .notes-title {
+                        font-size: 10px;
+                        font-weight: 700;
+                        color: #a8a29e;
+                        letter-spacing: 0.05em;
+                        margin: 0 0 4px 0;
+                        text-transform: uppercase;
+                    }
+                    .notes-body {
+                        margin: 0;
+                        white-space: pre-wrap;
+                    }
+                    .btn-redeem {
+                        width: 100%;
+                        padding: 14px;
+                        border-radius: 12px;
+                        background: #1c1917;
+                        color: #ffffff;
+                        font-weight: 600;
+                        font-size: 14px;
+                        border: none;
+                        cursor: pointer;
+                        transition: all 0.2s;
+                        box-shadow: 0 4px 12px rgba(28, 25, 23, 0.15);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 8px;
+                    }
+                    .btn-redeem:active {
+                        transform: scale(0.98);
+                    }
+                    .btn-redeem:disabled {
+                        opacity: 0.6;
+                        cursor: not-allowed;
+                    }
+                    .success-box {
+                        background: #ecfdf5;
+                        border: 1px solid #d1fae5;
+                        border-radius: 12px;
+                        padding: 16px;
+                        text-align: center;
+                        color: #065f46;
+                    }
+                    .success-title {
+                        font-size: 15px;
+                        font-weight: 700;
+                        margin: 0 0 4px 0;
+                    }
+                    .success-sub {
+                        font-size: 11px;
+                        color: #047857;
+                        margin: 0;
+                    }
+                    .loader-container {
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        justify-content: center;
+                        padding: 40px 0;
+                        color: #a8a29e;
+                        gap: 12px;
+                    }
+                    .spinner {
+                        width: 32px;
+                        height: 32px;
+                        border: 3px solid rgba(120, 113, 108, 0.1);
+                        border-radius: 50%;
+                        border-top-color: #78716c;
+                        animation: spin 0.8s linear infinite;
+                    }
+                    @keyframes spin {
+                        to { transform: rotate(360deg); }
+                    }
+                    .zoomed-overlay {
+                        position: fixed;
+                        top: 0; left: 0; right: 0; bottom: 0;
+                        background: rgba(28, 25, 23, 0.95);
+                        z-index: 100000;
+                        display: none;
+                        align-items: center;
+                        justify-content: center;
+                        padding: 16px;
+                        cursor: pointer;
+                    }
+                    .zoomed-img {
+                        max-width: 100%;
+                        max-height: 80vh;
+                        object-fit: contain;
+                        border-radius: 4px;
+                        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+                    }
+                `;
+                document.head.appendChild(style);
+                
+                // 動態插入原生 DOM 結構
+                document.write(`
+                    <div id="fast-redeem-app">
+                        <div class="redeem-card">
+                            <div class="redeem-header">
+                                <h3 class="redeem-title">
+                                    <span style="color:#ec4899;">🌸</span> 票券快速兌換
+                                </h3>
+                                <a href="${window.location.origin + window.location.pathname}" style="font-size:12px; color:#78716c; text-decoration:none; font-weight:700;">
+                                    回小金庫 App ↗
+                                </a>
+                            </div>
+                            <div class="redeem-content" id="redeem-main-content">
+                                <div class="loader-container" id="redeem-loader">
+                                    <div class="spinner"></div>
+                                    <span style="font-size:13px; font-weight:500;">正在從雲端載入票券資訊...</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="zoomed-overlay" id="zoomed-view">
+                        <img src="" class="zoomed-img" id="zoomed-img-el">
+                        <div style="position:absolute; bottom:40px; width:100%; text-align:center; color:rgba(255,255,255,0.5); font-size:12px; pointer-events:none;">點擊任意處關閉</div>
+                    </div>
+                `);
+                
+                // 網頁載入後，向 GAS 請求票券資料
+                window.addEventListener('DOMContentLoaded', async () => {
+                    const contentArea = document.getElementById('redeem-main-content');
+                    const zoomedView = document.getElementById('zoomed-view');
+                    const zoomedImgEl = document.getElementById('zoomed-img-el');
+                    
+                    zoomedView.addEventListener('click', () => {
+                        zoomedView.style.display = 'none';
+                    });
+                    
+                    // 獲取 GAS 網址 (優先從 URL 參數，其次從 localStorage)
+                    let activeGasUrl = redeemGas;
+                    if (!activeGasUrl) {
+                        activeGasUrl = localStorage.getItem('e_ticket_wallet_gas_url');
+                    }
+                    
+                    if (activeGasUrl) {
+                        try {
+                            activeGasUrl = decodeURIComponent(activeGasUrl);
+                            if (activeGasUrl.includes('%')) {
+                                activeGasUrl = decodeURIComponent(activeGasUrl);
+                            }
+                            activeGasUrl = activeGasUrl.replace(/%2Fdev$/i, '/exec')
+                                                       .replace(/\/dev$/i, '/exec')
+                                                       .replace(/%2Fexec$/i, '/exec');
+                        } catch(e) {
+                            console.error(e);
+                        }
+                    }
+                    
+                    if (!activeGasUrl || !activeGasUrl.startsWith('https://script.google.com/')) {
+                        contentArea.innerHTML = `
+                            <div style="text-align:center; padding:20px 0; color:#dc2626;">
+                                <h4 style="margin:0 0 8px 0; font-size:16px;">設定錯誤</h4>
+                                <p style="margin:0; font-size:12px; color:#78716c; line-height:1.5;">找不到有效的 Google Apps Script 網址，無法從雲端載入票券。<br>請確認小金庫 App 的 GAS 網址設定正確，或在分享的連結中帶有完整的網址參數。</p>
+                            </div>
+                        `;
+                        return;
+                    }
+                    
+                    let ticket = null;
+                    // 向 GAS 獲取單張票券
+                    try {
+                        const separator = activeGasUrl.includes('?') ? '&' : '?';
+                        const url = `${activeGasUrl}${separator}action=getTicket&ticketId=${redeemId}`;
+                        const res = await fetch(url, { method: 'GET', redirect: 'follow' });
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (data.success && data.ticket) {
+                                ticket = data.ticket;
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Fetch ticket error:', e);
+                    }
+                    
+                    if (!ticket) {
+                        contentArea.innerHTML = `
+                            <div style="text-align:center; padding:20px 0; color:#ea580c;">
+                                <h4 style="margin:0 0 8px 0; font-size:16px;">找不到票券</h4>
+                                <p style="margin:0; font-size:12px; color:#78716c; line-height:1.5;">此票券可能已被刪除，或是您尚未同步至試算表。</p>
+                                <button onclick="window.location.href=window.location.origin + window.location.pathname" style="margin-top:16px; padding:8px 16px; border:1px solid #78716c; background:#ffffff; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer;">回小金庫主畫面</button>
+                            </div>
+                        `;
+                        return;
+                    }
+                    
+                    // 渲染票券內容
+                    let imgHtml = '';
+                    if (ticket.imageUrl) {
+                        imgHtml = `
+                            <div class="img-area" id="trigger-zoom">
+                                <img src="${ticket.imageUrl}" class="barcode-img" alt="Barcode">
+                            </div>
+                        `;
+                    } else {
+                        let authHtml = ticket.authCode ? `<div class="auth-code">${ticket.authCode}</div>` : '';
+                        imgHtml = `
+                            <div class="img-area" style="cursor:default;">
+                                <div class="text-only-badge">
+                                    <span style="font-size:24px;">🎫</span>
+                                    <span style="font-weight:600; font-size:12px;">純文字提醒票券（無條碼截圖）</span>
+                                    ${authHtml}
+                                </div>
+                            </div>
+                        `;
+                    }
+                    
+                    let priceHtml = ticket.price ? `<p class="price-tag">NT$ ${ticket.price}</p>` : '';
+                    let notesHtml = ticket.notes ? `
+                        <div class="notes-box">
+                            <h4 class="notes-title">備註說明</h4>
+                            <p class="notes-body">${ticket.notes}</p>
+                        </div>
+                    ` : '';
+                    
+                    const cleanDate = ticket.expiryDate ? ticket.expiryDate.replace(/-/g, '.') : '';
+                    const isExpired = (function() {
+                        if (ticket.isNoExpiry) return false;
+                        const today = new Date(); today.setHours(0, 0, 0, 0);
+                        const exp = new Date(ticket.expiryDate);
+                        return !isNaN(exp.getTime()) && exp < today;
+                    })();
+                    
+                    const dateColor = isExpired ? '#dc2626' : '#57534e';
+                    const dateText = ticket.isNoExpiry ? '無期限' : `${cleanDate}${isExpired ? ' (已過期)' : ''}`;
+                    
+                    let buttonOrSuccessHtml = '';
+                    if (ticket.isUsed) {
+                        buttonOrSuccessHtml = `
+                            <div class="success-box">
+                                <h4 class="success-title">✓ 此票券已成功兌換！</h4>
+                                <p class="success-sub">已自動同步至您的雲端試算表與錢包</p>
+                            </div>
+                        `;
+                    } else {
+                        buttonOrSuccessHtml = `
+                            <button class="btn-redeem" id="btn-confirm-redeem">
+                                <span>我已兌換完成</span>
+                            </button>
+                        `;
+                    }
+                    
+                    contentArea.innerHTML = `
+                        <div class="redeem-info">
+                            <p class="store-name">${ticket.storeName || '使用店家'}</p>
+                            <h2 class="item-name">${ticket.itemName || '兌換品項'}</h2>
+                            ${priceHtml}
+                        </div>
+                        
+                        ${imgHtml}
+                        
+                        <div class="expiry-box" style="color: ${dateColor}">
+                            <span>📅 有效期限：</span>
+                            <strong>${dateText}</strong>
+                        </div>
+                        
+                        ${notesHtml}
+                        
+                        <div style="border-top: 1px solid #f5f5f4; padding-top: 16px;" id="action-area">
+                            ${buttonOrSuccessHtml}
+                        </div>
+                    `;
+                    
+                    // 綁定條碼放大事件
+                    const triggerZoom = document.getElementById('trigger-zoom');
+                    if (triggerZoom) {
+                        triggerZoom.addEventListener('click', () => {
+                            zoomedImgEl.src = ticket.imageUrl;
+                            zoomedView.style.display = 'flex';
+                        });
+                    }
+                    
+                    // 綁定確認兌換事件 (樂觀更新)
+                    const btnConfirm = document.getElementById('btn-confirm-redeem');
+                    if (btnConfirm) {
+                        btnConfirm.addEventListener('click', async () => {
+                            btnConfirm.disabled = true;
+                            btnConfirm.innerText = '處理中...';
+                            
+                            const actionArea = document.getElementById('action-area');
+                            actionArea.innerHTML = `
+                                <div class="success-box">
+                                    <h4 class="success-title">✓ 此票券已成功兌換！</h4>
+                                    <p class="success-sub">已自動同步至您的雲端試算表與錢包</p>
+                                </div>
+                            `;
+                            
+                            // 發送標記已使用請求
+                            try {
+                                fetch(activeGasUrl, {
+                                    method: 'POST',
+                                    body: JSON.stringify({ action: 'useTicket', ticketId: redeemId })
+                                });
+                            } catch(e) {
+                                console.error(e);
+                            }
+                        });
+                    }
+                });
+            }
+        })();
+    </script>
+    <div id="root"></div>
 
-// 攔截請求：優先返回快取，否則網路請求後存入快取
-self.addEventListener('fetch', e => {
-  e.respondWith(
-    (async () => {
-      // API 請求（Gemini / GAS / Drive）不走快取，直接網路
-      if (
-        e.request.url.includes('googleapis.com') ||
-        e.request.url.includes('script.google.com')
-      ) {
-        return fetch(e.request);
-      }
-      const cached = await caches.match(e.request);
-      if (cached) return cached;
-      const response = await fetch(e.request);
-      const cache = await caches.open(CACHE_NAME);
-      cache.put(e.request, response.clone());
-      return response;
-    })()
-  );
-});
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useMemo, useRef } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { get, set } from 'idb-keyval';
+
+        import {
+            Ticket as LucideTicket,
+            Scan as LucideScan,
+            X as LucideX,
+            Trash2 as LucideTrash2,
+            ExternalLink as LucideExternalLink,
+            Calendar as LucideCalendar,
+            CreditCard as LucideCreditCard,
+            Store as LucideStore,
+            CheckCircle as LucideCheckCircle,
+            Circle as LucideCircle,
+            Loader2 as LucideLoader2,
+            Archive as LucideArchive,
+            AlertCircle as LucideAlertCircle,
+            PiggyBank as LucidePiggyBank,
+            Infinity as LucideInfinity,
+            BellPlus as LucideBellPlus,
+            AppWindow as LucideAppWindow,
+            Settings as LucideSettings,
+            Download as LucideDownload,
+            Upload as LucideUpload,
+            PenLine as LucidePenLine,
+            Eraser as LucideEraser,
+            AlertTriangle as LucideAlertTriangle,
+            CloudUpload as LucideCloudUpload,
+            Cloud as LucideCloud,
+            Link as LucideLink,
+            CalendarCheck as LucideCalendarCheck,
+            Edit3 as LucideEdit3,
+            Smartphone as LucideSmartphone,
+            History as LucideHistory,
+            Check as LucideCheck,
+            HardDrive as LucideHardDrive,
+            Sparkles as LucideSparkles,
+            Eye as LucideEye,
+            EyeOff as LucideEyeOff,
+            FolderOpen as LucideFolderOpen,
+            Clock as LucideClock
+        } from 'lucide-react';
+
+        // ═══════════════════════════════════════════════════════════════════════
+        //  Gemini Vision OCR
+        //  - 主要使用 gemini-1.5-flash（免費額度穩定）
+        //  - 若失敗自動切換 gemini-2.0-flash 重試
+        // ═══════════════════════════════════════════════════════════════════════
+        const callGeminiModel = async (modelName, imageBase64, apiKey) => {
+            const base64Data = imageBase64.includes(',')
+                ? imageBase64.split(',')[1]
+                : imageBase64;
+
+            const res = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [
+                                // 送出圖片
+                                { inline_data: { mime_type: 'image/jpeg', data: base64Data } },
+                                // 要求回傳 JSON
+                                { text: `你是一個電子票券辨識助理。請從這張截圖中提取票券資訊，只回傳 JSON，不要任何其他文字：
+{"storeName":"使用店家或品牌名稱（例如：星巴克、全家）","itemName":"兌換品項或優惠內容（例如：大杯拿鐵、100元折扣）","expiryDate":"到期日 YYYY-MM-DD 格式，找不到則填 null","price":面額數字不含符號找不到填null,"source":"來源平台（PChome、momo、蝦皮、Line等），找不到填 null"}` }
+                            ]
+                        }]
+                    })
+                }
+            );
+
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                const msg = errData.error?.message || `HTTP ${res.status}`;
+                // 配額不足時給出明確提示
+                if (msg.includes('quota') || msg.includes('QUOTA') || res.status === 429) {
+                    throw new Error('QUOTA_EXCEEDED');
+                }
+                throw new Error(msg);
+            }
+
+            const result = await res.json();
+            const text = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            const jsonMatch = text.match(/\{[\s\S]*\}/);
+            if (!jsonMatch) throw new Error('Gemini 無法解析回應');
+
+            const parsed = JSON.parse(jsonMatch[0]);
+            return {
+                storeName:  parsed.storeName  || '',
+                itemName:   parsed.itemName   || '',
+                expiryDate: parsed.expiryDate || new Date().toISOString().split('T')[0],
+                price:      parsed.price ? parseInt(String(parsed.price).replace(/[^0-9]/g, ''), 10) : 0,
+                source:     parsed.source || '',
+                rawText:    text
+            };
+        };
+
+        // 主 OCR 入口：優先 gemini-2.5-flash，若遇塞車或配額問題，自動切換至備用模型
+        const extractTicketDataWithGemini = async (imageBase64, apiKey) => {
+            const models = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.5-pro'];
+            let lastError = null;
+
+            for (const model of models) {
+                try {
+                    return await callGeminiModel(model, imageBase64, apiKey);
+                } catch (err) {
+                    lastError = err;
+                    // 如果是 API Key 錯誤，就不用換模型重試了，直接拋出
+                    if (err.message.includes('API_KEY_INVALID') || err.message.includes('key is not valid')) {
+                        throw err;
+                    }
+                    console.warn(`模型 ${model} 辨識失敗，嘗試下一個模型。錯誤原因:`, err.message);
+                }
+            }
+
+            // 如果所有模型都失敗，根據最後一個錯誤給出友善提示
+            if (lastError && (lastError.message === 'QUOTA_EXCEEDED' || lastError.message.includes('quota') || lastError.message.includes('Quota'))) {
+                throw new Error('Gemini 免費額度已達上限，請稍後再試。');
+            }
+            if (lastError && (lastError.message.includes('high demand') || lastError.message.includes('demand'))) {
+                throw new Error('Google 伺服器目前極度繁忙（High Demand），請稍等幾秒後再試一次。');
+            }
+            throw lastError || new Error('所有備用模型均辨識失敗');
+        };
+
+
+        //  Google Drive 操作（透過 Google Apps Script 中繼）
+        //  - 不需要 OAuth，GAS 以你的 Google 帳號身分執行
+        // ═══════════════════════════════════════════════════════════════════════
+
+        /** 呼叫 GAS 並回傳 JSON 結果 */
+        const callGAS = async (gasUrl, payload) => {
+            const res = await fetch(gasUrl, {
+                method: 'POST',
+                body: JSON.stringify(payload),
+                redirect: 'follow'   // 跟隨 GAS 的 302 重定向
+            });
+            if (!res.ok) throw new Error(`GAS HTTP ${res.status}`);
+            return res.json();
+        };
+
+        /** 上傳圖片至 Drive「待使用」資料夾，回傳 { fileId } */
+        const uploadImageToDrive = (gasUrl, imageBase64, ticketId) =>
+            callGAS(gasUrl, { action: 'uploadImage', imageBase64, ticketId });
+
+        /** 將指定圖片移至「已使用」資料夾 */
+        const moveImageToUsed = (gasUrl, fileId) =>
+            callGAS(gasUrl, { action: 'moveToUsed', fileId });
+
+        /** 將指定圖片移入垃圾桶 */
+        const deleteImageFromDrive = (gasUrl, fileId) =>
+            callGAS(gasUrl, { action: 'deleteFile', fileId });
+
+        // ═══════════════════════════════════════════════════════════════════════
+        //  工具函式
+        // ═══════════════════════════════════════════════════════════════════════
+        const normDate = d => d ? d.replace(/\./g, '-').replace(/\//g, '-') : '';
+
+        const checkIsExpired = (dateStr, isNoExpiry) => {
+            if (isNoExpiry) return false;
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const exp = new Date(normDate(dateStr));
+            return !isNaN(exp.getTime()) && exp < today;
+        };
+
+        const checkIsExpiringSoon = (dateStr, isNoExpiry) => {
+            if (isNoExpiry) return false;
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const exp = new Date(normDate(dateStr));
+            if (isNaN(exp.getTime()) || exp < today) return false;
+            return Math.ceil((exp - today) / 86400000) <= 10;
+        };
+
+        const todayStr = () => {
+            const n = new Date();
+            return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`;
+        };
+
+        // ═══════════════════════════════════════════════════════════════════════
+        //  TicketCard 元件
+        // ═══════════════════════════════════════════════════════════════════════
+        const TicketCard = ({ ticket, onToggleUsed, onViewDetails, onScanView, isExpired, isExpiringSoon, isRecentlyViewed }) => {
+            let cardStyle = 'bg-white border-stone-100 hover:shadow-md hover:border-stone-300';
+            if (isRecentlyViewed)   cardStyle = 'bg-stone-200 border-stone-300 shadow-md ring-2 ring-stone-200/50';
+            else if (ticket.isUsed) cardStyle = 'bg-white opacity-60 grayscale-[0.5] border-stone-200';
+            else if (isExpired)     cardStyle = 'bg-red-50/10 opacity-75 border-red-100';
+            else if (isExpiringSoon) cardStyle = 'bg-red-50 border-red-200 shadow-sm';
+
+            return (
+                <div className={`relative w-full rounded-xl shadow-sm border transition-all duration-300 mb-4 overflow-hidden group ${cardStyle}`}>
+                    {/* 即將過期角標 */}
+                    {isExpiringSoon && !ticket.isUsed && !isExpired && (
+                        <div className="absolute top-0 right-0 bg-red-100 text-red-600 text-[10px] px-2 py-0.5 rounded-bl-lg z-10 font-bold tracking-wider flex items-center gap-1">
+                            <LucideAlertCircle size={10}/><span>即將過期</span>
+                        </div>
+                    )}
+                    {/* Drive 備份小點 */}
+                    {ticket.driveFileId && (
+                        <div className="absolute top-0 left-0 bg-blue-100/80 text-blue-400 text-[9px] px-1.5 py-0.5 rounded-br-lg z-10 flex items-center gap-0.5">
+                            <LucideHardDrive size={8}/>
+                            <span className="font-bold">{ticket.isUsed ? '☁已用' : '☁備'}</span>
+                        </div>
+                    )}
+                    {/* 已使用浮水印 */}
+                    {ticket.isUsed && (
+                        <div className="absolute inset-0 pointer-events-none z-10 flex items-center justify-center overflow-hidden">
+                            <div className="text-stone-300/20 text-6xl font-black uppercase -rotate-12 border-4 border-stone-300/20 p-4 rounded-lg">USED</div>
+                        </div>
+                    )}
+                    <div className="flex p-4 gap-4">
+                        {/* 縮圖 */}
+                        <div className="flex-shrink-0 w-20 h-20 bg-stone-100 rounded-lg overflow-hidden relative cursor-pointer" onClick={() => onScanView(ticket)}>
+                            {ticket.imageUrl
+                                ? <img src={ticket.imageUrl} alt={ticket.itemName} className="w-full h-full object-cover"/>
+                                : <div className="w-full h-full flex flex-col items-center justify-center text-stone-300 gap-1">
+                                    <LucideTicket size={24}/><span className="text-[9px] font-bold tracking-wider">TEXT ONLY</span>
+                                  </div>
+                            }
+                            <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors flex items-center justify-center">
+                                <LucideScan className="text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md" size={20}/>
+                            </div>
+                        </div>
+                        {/* 資訊區 */}
+                        <div className="flex-grow min-w-0 flex flex-col justify-between" onClick={() => onViewDetails(ticket)}>
+                            <div>
+                                <p className={`text-[10px] tracking-wider font-bold uppercase truncate pr-2 ${ticket.storeName ? 'text-stone-400' : 'text-stone-300'}`}>
+                                    {ticket.storeName || '使用店家'}
+                                </p>
+                                <h3 className={`text-base font-medium leading-tight truncate mt-0.5 ${ticket.isUsed ? 'text-stone-500 line-through' : (ticket.itemName ? 'text-stone-800' : 'text-stone-300')}`}>
+                                    {ticket.itemName || '兌換品項'}
+                                </h3>
+                            </div>
+                            <div className="flex items-end gap-3 mt-2">
+                                <div className={`text-xs px-2 py-1 rounded flex items-center gap-1.5
+                                    ${isExpired && !ticket.isUsed ? 'bg-red-50 text-red-600 font-medium' : ''}
+                                    ${isExpiringSoon && !ticket.isUsed && !isExpired ? 'bg-red-100 text-red-700 font-bold' : ''}
+                                    ${!isExpired && !isExpiringSoon && !ticket.isNoExpiry && !ticket.isUsed ? 'bg-stone-50 text-stone-500' : ''}
+                                    ${ticket.isNoExpiry && !ticket.isUsed ? 'bg-stone-100 text-stone-600' : ''}
+                                    ${ticket.isUsed ? 'bg-stone-100 text-stone-500' : ''}
+                                `}>
+                                    {ticket.isUsed ? <LucideCalendarCheck size={10}/> : (ticket.isNoExpiry ? <LucideInfinity size={12}/> : <LucideCalendar size={10}/>)}
+                                    <span className="tracking-wide">
+                                        {ticket.isUsed
+                                            ? (ticket.usedDate ? `已於 ${ticket.usedDate.replace(/-/g,'.')} 使用` : '已使用')
+                                            : (ticket.isNoExpiry ? '無期限' : ticket.expiryDate.replace(/-/g,'.'))
+                                        }
+                                        {!ticket.isUsed && isExpired ? ' (已過期)' : ''}
+                                    </span>
+                                </div>
+                                {ticket.price ? <div className="text-xs text-stone-400 font-medium">NT$ {ticket.price}</div> : null}
+                            </div>
+                        </div>
+                        {/* 操作按鈕 */}
+                        <div className="flex flex-col justify-between items-end pl-2 border-l border-stone-50/50">
+                            <button
+                                onClick={e => { e.stopPropagation(); onToggleUsed(ticket.id); }}
+                                className={`p-2 rounded-full transition-colors z-20 ${ticket.isUsed ? 'text-stone-400 hover:text-stone-600' : 'text-stone-300 hover:text-emerald-500'}`}
+                            >
+                                {ticket.isUsed ? <LucideCheckCircle size={22} className="fill-stone-100"/> : <LucideCircle size={22}/>}
+                            </button>
+                            <button onClick={() => onScanView(ticket)} className="p-2 text-stone-300 hover:text-stone-800 transition-colors">
+                                <LucideScan size={18}/>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // ═══════════════════════════════════════════════════════════════════════
+        //  Storage Keys（保持與舊版相同，確保資料遷移無縫）
+        // ═══════════════════════════════════════════════════════════════════════
+        const STORAGE_KEY          = 'e_ticket_wallet_local_data';
+        const APP_TITLE_KEY        = 'e_ticket_wallet_app_title';
+        const GAS_URL_KEY          = 'e_ticket_wallet_gas_url';
+        const LAST_SYNC_KEY        = 'e_ticket_wallet_last_sync_time';
+        const LAST_BACKUP_KEY      = 'e_ticket_wallet_last_backup_time';
+        const GEMINI_KEY_KEY       = 'e_ticket_wallet_gemini_key';     // 新增
+        const DRIVE_ENABLED_KEY    = 'e_ticket_wallet_drive_enabled';  // 新增
+        const LINE_TOKEN_KEY       = 'e_ticket_wallet_line_token';     // 新增 LINE Token
+        const LINE_USERID_KEY      = 'e_ticket_wallet_line_userid';    // 新增 LINE User ID
+
+        // ═══════════════════════════════════════════════════════════════════════
+        //  主 App 元件
+        // ═══════════════════════════════════════════════════════════════════════
+        const App = () => {
+            // ── 狀態 ──────────────────────────────────────────────────────────
+            const [tickets,       setTickets]       = useState([]);
+            const [appTitle,      setAppTitle]      = useState('花花的小金庫');
+            const [gasUrl,        setGasUrl]        = useState('');
+            const [geminiKey,     setGeminiKey]     = useState('');
+            const [driveEnabled,  setDriveEnabled]  = useState(false);
+            const [showKey,       setShowKey]       = useState(false);  // API Key 顯示/隱藏
+            const [lineToken,     setLineToken]     = useState('');     // LINE Channel Access Token
+            const [lineUserId,    setLineUserId]    = useState('');     // LINE User ID
+            const [showLineToken, setShowLineToken] = useState(false);  // LINE Token 顯示/隱藏
+            const [activeTab,     setActiveTab]     = useState('available');
+            const [searchQuery,   setSearchQuery]   = useState('');
+            const [isUploading,   setIsUploading]   = useState(false);
+            const [uploadStatus,  setUploadStatus]  = useState('');
+            const [error,         setError]         = useState(null);
+            const [isLoaded,      setIsLoaded]      = useState(false);
+            const [isSyncing,     setIsSyncing]     = useState(false);
+            const [syncResult,    setSyncResult]    = useState(null);
+            const [lastSyncTime,  setLastSyncTime]  = useState(null);
+            const [lastBkTime,    setLastBkTime]    = useState(null);
+            const [detailsId,     setDetailsId]     = useState(null);
+            const [scanId,        setScanId]        = useState(null);
+            const [recentlyId,    setRecentlyId]    = useState(null);
+            const [showSettings,  setShowSettings]  = useState(false);
+            const [showDelAll,    setShowDelAll]    = useState(false);
+            const [draftId,       setDraftId]       = useState(null);
+            const [redeemId,      setRedeemId]      = useState(null);       // URL 中傳入的票券 ID
+            const [redeemGas,     setRedeemGas]     = useState(null);       // URL 中傳入的 GAS Web App URL
+            const [redeemTicket,  setRedeemTicket]  = useState(null);       // 兌換模式對應的票券資料
+            const [redeemSuccess, setRedeemSuccess] = useState(false);      // 兌換成功狀態
+            const [isRedeeming,   setIsRedeeming]   = useState(false);      // 兌換中 loading 狀態
+            const [isLoadingRedeem, setIsLoadingRedeem] = useState(false);  // 是否正在自雲端載入票券
+            const [isRedeemZoomed, setIsRedeemZoomed] = useState(false);    // 一鍵兌換模式下的條碼放大狀態
+
+
+
+            const fileInputRef   = useRef(null);
+            const importFileRef  = useRef(null);
+
+            const detailsTicket = useMemo(() => tickets.find(t => t.id === detailsId) || null, [tickets, detailsId]);
+            const scanTicket    = useMemo(() => tickets.find(t => t.id === scanId)    || null, [tickets, scanId]);
+            const isDriveReady  = driveEnabled && gasUrl.startsWith('https://script.google.com/');
+
+            // ── 初始化載入 ────────────────────────────────────────────────────
+            useEffect(() => {
+                const init = async () => {
+                    // 讀取設定
+                    const sv = k => localStorage.getItem(k);
+                    if (sv(APP_TITLE_KEY))   setAppTitle(sv(APP_TITLE_KEY));
+                    if (sv(GAS_URL_KEY))     setGasUrl(sv(GAS_URL_KEY));
+                    if (sv(GEMINI_KEY_KEY))  setGeminiKey(sv(GEMINI_KEY_KEY));
+                    if (sv(DRIVE_ENABLED_KEY)) setDriveEnabled(sv(DRIVE_ENABLED_KEY) === 'true');
+                    if (sv(LINE_TOKEN_KEY))  setLineToken(sv(LINE_TOKEN_KEY));
+                    if (sv(LINE_USERID_KEY)) setLineUserId(sv(LINE_USERID_KEY));
+                    setLastSyncTime(sv(LAST_SYNC_KEY));
+                    setLastBkTime(sv(LAST_BACKUP_KEY));
+
+                    // 舊版 localStorage → IndexedDB 遷移（保留原有邏輯）
+                    const lsData = sv(STORAGE_KEY);
+                    if (lsData) {
+                        try {
+                            const parsed = JSON.parse(lsData);
+                            if (Array.isArray(parsed) && parsed.length > 0) {
+                                await set(STORAGE_KEY, parsed);
+                                setTickets(parsed);
+                                localStorage.removeItem(STORAGE_KEY);
+                                alert('系統升級通知：\n您的資料已成功遷移至大容量儲存空間！');
+                                setIsLoaded(true); return;
+                            }
+                        } catch(e) { console.error('Migration error', e); }
+                    }
+                    // 從 IndexedDB 讀取
+                    try {
+                        const db = await get(STORAGE_KEY);
+                        if (db && Array.isArray(db)) setTickets(db);
+                    } catch(e) { console.error('IDB Load Error', e); }
+                    
+                    // 偵測 redeem 一鍵兌換參數
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const rId = urlParams.get('redeem');
+                    let rGas = urlParams.get('gas');
+                    if (rGas) {
+                        try {
+                            // 進行雙重解碼，確保不會因為二次編碼而帶有 %2F
+                            rGas = decodeURIComponent(rGas);
+                            if (rGas.includes('%')) {
+                                rGas = decodeURIComponent(rGas);
+                            }
+                            // 確保最後是標準的 /exec，把可能被錯誤編碼或殘留的 %2Fexec、%2Fdev 或 /dev 修正
+                            rGas = rGas.replace(/%2Fdev$/i, '/exec')
+                                       .replace(/\/dev$/i, '/exec')
+                                       .replace(/%2Fexec$/i, '/exec');
+                        } catch(e) {
+                            console.error('Decode rGas error', e);
+                        }
+                    }
+                    if (rId) setRedeemId(rId);
+                    if (rGas) setRedeemGas(rGas);
+                    
+                    setIsLoaded(true);
+
+                };
+                init();
+            }, []);
+
+            // ── 偵測一鍵兌換票券（優先本機，若無則從雲端載入） ───────────────────
+            useEffect(() => {
+                const loadRedeemTicket = async () => {
+                    if (!isLoaded || !redeemId) return;
+                    
+                    // 1. 優先從本機 IndexedDB 尋找
+                    const found = tickets.find(t => t.id === redeemId);
+                    if (found) {
+                        setRedeemTicket(found);
+                        return;
+                    }
+                    
+                    // 2. 本機找不到且有 gas 網址，向雲端查詢 (使用 GET 請求以支援 CORS 讀取)
+                    const activeGasUrl = redeemGas || gasUrl;
+                    if (activeGasUrl && activeGasUrl.startsWith('https://script.google.com/')) {
+                        setIsLoadingRedeem(true);
+                        try {
+                            const separator = activeGasUrl.includes('?') ? '&' : '?';
+                            const url = `${activeGasUrl}${separator}action=getTicket&ticketId=${redeemId}`;
+                            const res = await fetch(url, {
+                                method: 'GET',
+                                redirect: 'follow'
+                            });
+                            if (res.ok) {
+                                const data = await res.json();
+                                if (data.success && data.ticket) {
+                                    setRedeemTicket(data.ticket);
+                                }
+                            }
+                        } catch (e) {
+                            console.error('Fetch remote ticket error:', e);
+                        } finally {
+                            setIsLoadingRedeem(false);
+                        }
+                    }
+                };
+                loadRedeemTicket();
+            }, [tickets, isLoaded, redeemId, redeemGas, gasUrl]);
+
+
+            // ── 設定持久化 ────────────────────────────────────────────────────
+            useEffect(() => { localStorage.setItem(APP_TITLE_KEY, appTitle); document.title = `${appTitle} - E-Ticket Wallet`; }, [appTitle]);
+            useEffect(() => { localStorage.setItem(GAS_URL_KEY,      gasUrl);     }, [gasUrl]);
+            useEffect(() => { localStorage.setItem(GEMINI_KEY_KEY,   geminiKey);  }, [geminiKey]);
+            useEffect(() => { localStorage.setItem(DRIVE_ENABLED_KEY, driveEnabled.toString()); }, [driveEnabled]);
+            useEffect(() => { localStorage.setItem(LINE_TOKEN_KEY,  lineToken);  }, [lineToken]);
+            useEffect(() => { localStorage.setItem(LINE_USERID_KEY, lineUserId); }, [lineUserId]);
+
+            // ── 票券資料持久化 ────────────────────────────────────────────────
+            useEffect(() => {
+                if (!isLoaded) return;
+                set(STORAGE_KEY, tickets).catch(() => setError('儲存失敗，請檢查裝置空間'));
+            }, [tickets, isLoaded]);
+
+            // ── 同步至 Google Sheet 通用函數 ──────────────────────────────────────
+            const syncTicketsToCloud = async (ticketsList) => {
+                if (!gasUrl || !gasUrl.startsWith('https://script.google.com/')) return;
+                try {
+                    const light = ticketsList.map(({ imageUrl, ...rest }) => rest);
+                    const appUrl = window.location.origin + window.location.pathname;
+                    const res = await fetch(gasUrl, { 
+                        method: 'POST', 
+                        body: JSON.stringify({ tickets: light, lineToken, lineUserId, appUrl, gasUrl }), 
+                        redirect: 'follow' 
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.success && data.tickets) {
+                            // 🌟 雙向同步：將雲端合併後的最新票券清單（例如已被標記已使用）回寫到前端 state
+                            // 補回本地的 base64 圖片
+                            const imgMap = {};
+                            ticketsList.forEach(t => { if (t.imageUrl) imgMap[t.id] = t.imageUrl; });
+                            
+                            const updatedTickets = data.tickets.map(t => ({
+                                ...t,
+                                imageUrl: imgMap[t.id] || ''
+                            }));
+                            setTickets(updatedTickets);
+                        }
+                    }
+                    const now = new Date().toLocaleString();
+                    setLastSyncTime(now); 
+                    localStorage.setItem(LAST_SYNC_KEY, now);
+                } catch(e) { 
+                    console.error('Auto sync error', e); 
+                }
+            };
+
+            // ── 同步至 Google Sheet 手動按鈕 ───────────────────────────────────────────
+            const handleSyncToCloud = async () => {
+                if (!gasUrl) { alert('請先輸入 Google Script 網址'); return; }
+                if (!gasUrl.startsWith('https://script.google.com/')) { alert('網址格式錯誤'); return; }
+                setIsSyncing(true); setSyncResult(null);
+                try {
+                    await syncTicketsToCloud(tickets);
+                    setSyncResult('success'); 
+                    setTimeout(() => setSyncResult(null), 3000);
+                } catch(e) { 
+                    console.error('Sync error', e); 
+                    alert(`同步失敗：${e.message}\n請檢查您的 Google Script URL 是否貼錯，或請重試。`);
+                } finally {
+                    setIsSyncing(false);
+                }
+            };
+
+            // ── 一鍵兌換確認 ──────────────────────────────────────────────────
+            const handleRedeemConfirm = async () => {
+                if (isRedeeming) return;
+                setIsRedeeming(true);
+                
+                // 🌟 樂觀更新 (Optimistic Update)
+                // 點選後立即將本地 UI 與資料狀態設定為已兌換，提供 0 秒延遲的極速反饋
+                const updatedUsedDate = todayStr();
+                const updatedUsedAt = Date.now();
+                
+                setTickets(prev => prev.map(t => {
+                    if (t.id !== redeemId) return t;
+                    return {
+                        ...t,
+                        isUsed: true,
+                        usedAt: updatedUsedAt,
+                        usedDate: updatedUsedDate
+                    };
+                }));
+                setRedeemTicket(prev => prev ? { ...prev, isUsed: true, usedDate: updatedUsedDate } : null);
+                setRedeemSuccess(true);
+                setIsRedeeming(false);
+                
+                // 在後台異步通知雲端標記已使用，不阻塞用戶介面
+                try {
+                    const activeGasUrl = redeemGas || gasUrl;
+                    if (activeGasUrl && activeGasUrl.startsWith('https://script.google.com/')) {
+                        fetch(activeGasUrl, {
+                            method: 'POST',
+                            body: JSON.stringify({ action: 'useTicket', ticketId: redeemId })
+                        }).catch(e => console.error('Cloud mark used failed in background:', e));
+                    }
+                } catch(e) {
+                    console.error('Cloud mark used error in background:', e);
+                }
+            };
+
+
+            // ── 匯出備份 ──────────────────────────────────────────────────────
+            const exportData = () => {
+                if (!tickets.length) { alert('目前沒有資料可備份'); return; }
+                try {
+                    const blob = new Blob([JSON.stringify(tickets)], { type: 'application/json' });
+                    const url  = URL.createObjectURL(blob);
+                    const a    = Object.assign(document.createElement('a'), {
+                        href: url,
+                        download: `flower_backup_v30_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.json`
+                    });
+                    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    const now = new Date().toLocaleString();
+                    setLastBkTime(now); localStorage.setItem(LAST_BACKUP_KEY, now);
+                } catch(e) { alert('匯出失敗'); }
+            };
+
+            // ── 匯入還原 ──────────────────────────────────────────────────────
+            const handleImport = e => {
+                const file = e.target.files?.[0]; if (!file) return;
+                if (!window.confirm('匯入將覆蓋所有現有資料，確定執行嗎？')) return;
+                const reader = new FileReader();
+                reader.onload = async ev => {
+                    try {
+                        const parsed = JSON.parse(ev.target.result);
+                        if (!Array.isArray(parsed)) throw new Error();
+                        await set(STORAGE_KEY, parsed);
+                        setTickets(parsed); alert('還原成功！');
+                    } catch { alert('匯入失敗：檔案格式錯誤或損毀'); }
+                };
+                reader.readAsText(file);
+                if (e.target) e.target.value = '';
+            };
+
+            // ── 掃描票券（Gemini OCR + Drive 上傳）────────────────────────────
+            const handleFileUpload = async e => {
+                const file = e.target.files?.[0]; if (!file) return;
+                setRecentlyId(null); setIsUploading(true); setError(null); setUploadStatus('讀取圖片中...');
+
+                try {
+                    const reader = new FileReader();
+                    reader.onload = async ev => {
+                        const src = ev.target.result;
+                        try {
+                            // 壓縮圖片（最大寬 600px，JPEG 0.4）
+                            const img = await new Promise((res, rej) => {
+                                const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src;
+                            });
+                            const canvas = document.createElement('canvas');
+                            const targetWidth = Math.min(600, img.width);
+                            const scale  = targetWidth / img.width;
+                            canvas.width = targetWidth; canvas.height = img.height * scale;
+                            canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+                            const b64 = canvas.toDataURL('image/jpeg', 0.4);
+
+                            // 產生票券 id（先佔位）
+                            const newId = Date.now().toString();
+
+                            let data = {
+                                storeName: '', itemName: '',
+                                expiryDate: new Date().toISOString().split('T')[0],
+                                price: 0, source: '', rawText: ''
+                            };
+                            let driveFileId = undefined;
+
+                            // ① & ② 並行執行 Gemini AI 辨識與上傳至 Google Drive
+                            setUploadStatus('⚡ AI 辨識與雲端備份並行處理中...');
+                            
+                            const promises = [];
+                            
+                            // 建立 AI 辨識 promise
+                            let ocrPromise = Promise.resolve(null);
+                            if (geminiKey) {
+                                ocrPromise = extractTicketDataWithGemini(b64, geminiKey).catch(ocrErr => {
+                                    console.error('Gemini error:', ocrErr);
+                                    setError(`AI 辨識失敗：${ocrErr.message}，請手動填寫`);
+                                    return null;
+                                });
+                            }
+                            promises.push(ocrPromise);
+                            
+                            // 建立 Drive 上傳 promise
+                            let drivePromise = Promise.resolve(null);
+                            if (isDriveReady) {
+                                drivePromise = uploadImageToDrive(gasUrl, b64, newId).catch(driveErr => {
+                                    console.error('Drive upload error:', driveErr);
+                                    return null;
+                                });
+                            }
+                            promises.push(drivePromise);
+                            
+                            // 等待並行任務完成
+                            const [ocrResult, driveResult] = await Promise.all(promises);
+                            
+                            if (ocrResult) {
+                                data = ocrResult;
+                            }
+                            if (driveResult && driveResult.fileId) {
+                                driveFileId = driveResult.fileId;
+                            }
+
+                            setUploadStatus('✅ 完成！');
+
+                            // ③  建立票券物件
+                            const newTicket = {
+                                id:          newId,
+                                storeName:   data.storeName,
+                                itemName:    data.itemName,
+                                expiryDate:  data.expiryDate,
+                                price:       data.price || undefined,
+                                imageUrl:    b64,
+                                isUsed:      false,
+                                createdAt:   Date.now(),
+                                notes:       '',
+                                isNoExpiry:  false,
+                                usedAt:      undefined,
+                                source:      data.source || '',
+                                owner:       '自己',      // 新增：預設提醒對象為自己
+                                driveFileId: driveFileId, // Drive 檔案 ID（可能為 undefined）
+                                url:         '',
+                                alertTime:   '',
+                                alertSentStatus: ''
+                            };
+
+                            setTickets(prev => [newTicket, ...prev]);
+                            syncTicketsToCloud([newTicket, ...tickets]); // 新增：圖片掃描成功後自動同步至雲端
+                            setDetailsId(newTicket.id);
+                            setActiveTab('available');
+
+                        } catch(err) {
+                            console.error(err); setError('圖片處理失敗');
+                        } finally {
+                            setIsUploading(false); setUploadStatus('');
+                        }
+                    };
+                    reader.readAsDataURL(file);
+                } catch(err) {
+                    setError('讀取檔案失敗'); setIsUploading(false);
+                }
+                if (fileInputRef.current) fileInputRef.current.value = '';
+            };
+
+            // ── 手動新增 ──────────────────────────────────────────────────────
+            const handleAddManual = () => {
+                const newTicket = {
+                    id: Date.now().toString(), storeName: '', itemName: '',
+                    expiryDate: new Date().toISOString().split('T')[0],
+                    price: undefined, imageUrl: '', isUsed: false,
+                    createdAt: Date.now(), notes: '', isNoExpiry: false,
+                    usedAt: undefined, usedDate: undefined, source: '',
+                    owner: '自己', // 新增：預設提醒對象為自己
+                    url: '', alertTime: '', alertSentStatus: ''
+                };
+                setTickets(prev => [newTicket, ...prev]);
+                setDetailsId(newTicket.id); setDraftId(newTicket.id);
+                setActiveTab('available'); setRecentlyId(null);
+            };
+
+            const handleCloseDetails = save => {
+                if (draftId && detailsId === draftId) {
+                    if (!save) {
+                        setTickets(prev => prev.filter(t => t.id !== draftId));
+                    } else {
+                        syncTicketsToCloud(tickets); // 手動新增票券點儲存時自動同步
+                    }
+                    setDraftId(null);
+                } else {
+                    if (save) {
+                        syncTicketsToCloud(tickets); // 編輯票券點儲存時自動同步
+                    }
+                }
+                setDetailsId(null);
+            };
+
+            // ── 標記已使用（同步移動 Drive 截圖）────────────────────────────
+            const handleToggleUsed = id => {
+                setRecentlyId(null);
+                setTickets(prev => {
+                    const updated = prev.map(t => {
+                        if (t.id !== id) return t;
+                        const newIsUsed = !t.isUsed;
+                        if (newIsUsed && t.driveFileId && isDriveReady) {
+                            moveImageToUsed(gasUrl, t.driveFileId).catch(err =>
+                                console.error('Drive move error:', err)
+                            );
+                        }
+                        return {
+                            ...t, isUsed: newIsUsed,
+                            usedAt:   newIsUsed ? Date.now() : undefined,
+                            usedDate: newIsUsed ? todayStr() : undefined
+                        };
+                    });
+                    syncTicketsToCloud(updated); // 標記已使用時自動同步
+                    return updated;
+                });
+            };
+
+            // ── 刪除票券（同步刪除 Drive 截圖）──────────────────────────────
+            const deleteTicket = id => {
+                if (!window.confirm('確定要刪除這張票券嗎？')) return;
+                const ticket = tickets.find(t => t.id === id);
+                if (ticket?.driveFileId && isDriveReady) {
+                    deleteImageFromDrive(gasUrl, ticket.driveFileId).catch(err =>
+                        console.error('Drive delete error:', err)
+                    );
+                }
+                setRecentlyId(null);
+                setTickets(prev => {
+                    const updated = prev.filter(t => t.id !== id);
+                    syncTicketsToCloud(updated); // 刪除票券時自動同步
+                    return updated;
+                });
+                setDetailsId(null);
+                if (id === draftId) setDraftId(null);
+            };
+
+            const handleDeleteAllClick = () => { if (activeTab === 'available') return; setShowDelAll(true); };
+            const confirmDeleteAll = () => {
+                setTickets(prev => {
+                    if (activeTab === 'used')    return prev.filter(t => !t.isUsed);
+                    if (activeTab === 'expired') return prev.filter(t => !checkIsExpired(t.expiryDate, t.isNoExpiry) || t.isUsed);
+                    return prev;
+                });
+                setRecentlyId(null); setShowDelAll(false);
+            };
+
+            const updateField = (id, field, value) =>
+                setTickets(prev => prev.map(t => t.id === id ? { ...t, [field]: value } : t));
+
+            const handleOpenDetails = t => { setRecentlyId(null); setDetailsId(t.id); };
+            const handleOpenScan    = t => { setRecentlyId(null); setScanId(t.id); };
+            const handleCloseScan   = () => { if (scanId) { setRecentlyId(scanId); setScanId(null); } };
+
+            // ── 過濾 & 排序 ───────────────────────────────────────────────────
+            const filteredTickets = useMemo(() => {
+                const q = searchQuery.toLowerCase();
+                return tickets
+                    .filter(t =>
+                        t.storeName?.toLowerCase().includes(q) ||
+                        t.itemName?.toLowerCase().includes(q)  ||
+                        t.notes?.toLowerCase().includes(q)     ||
+                        t.authCode?.toLowerCase().includes(q)  ||
+                        t.source?.toLowerCase().includes(q)
+                    )
+                    .filter(t => {
+                        const exp = checkIsExpired(t.expiryDate, t.isNoExpiry);
+                        if (activeTab === 'available') return !t.isUsed && !exp;
+                        if (activeTab === 'used')      return t.isUsed;
+                        if (activeTab === 'expired')   return !t.isUsed && exp;
+                        return true;
+                    })
+                    .sort((a, b) => {
+                        if (activeTab === 'used') {
+                            const ta = a.usedAt || 0, tb = b.usedAt || 0;
+                            if (!ta && !tb) return a.expiryDate.localeCompare(b.expiryDate);
+                            return tb - ta;
+                        }
+                        if (a.isNoExpiry && b.isNoExpiry) return 0;
+                        if (a.isNoExpiry) return 1; if (b.isNoExpiry) return -1;
+                        return a.expiryDate.localeCompare(b.expiryDate);
+                    });
+            }, [tickets, searchQuery, activeTab]);
+
+            const tabCounts = useMemo(() => ({
+                available: tickets.filter(t => !t.isUsed && !checkIsExpired(t.expiryDate, t.isNoExpiry)).length,
+                used:      tickets.filter(t => t.isUsed).length,
+                expired:   tickets.filter(t => !t.isUsed && checkIsExpired(t.expiryDate, t.isNoExpiry)).length,
+            }), [tickets]);
+
+            // ── 渲染：一鍵兌換模式 ──────────────────────────────────────────────
+            if (redeemId) {
+                return (
+                    <div className="min-h-screen w-full bg-[#f5f5f1] text-stone-800 font-sans flex items-center justify-center p-4">
+                        <div className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden border border-stone-200/50 flex flex-col">
+                            {/* 標題列 */}
+                            <div className="px-6 py-5 border-b border-stone-100 flex justify-between items-center bg-stone-50/50">
+                                <h3 className="text-lg font-bold text-stone-800 flex items-center gap-2">
+                                    <LucideSparkles className="text-pink-500" size={20}/>
+                                    票券快速兌換
+                                </h3>
+                                <button 
+                                    onClick={() => window.location.href = window.location.origin + window.location.pathname}
+                                    className="text-xs font-bold text-stone-400 hover:text-stone-800 transition-colors flex items-center gap-1"
+                                >
+                                    回小金庫 App <LucideExternalLink size={12}/>
+                                </button>
+                            </div>
+
+                            {/* 內容 */}
+                            <div className="p-6 flex-grow flex flex-col justify-between min-h-[50vh] space-y-6">
+                                {isLoadingRedeem ? (
+                                    <div className="flex-grow flex flex-col items-center justify-center py-16 text-stone-400 space-y-4">
+                                        <LucideLoader2 className="animate-spin text-stone-400" size={40}/>
+                                        <p className="text-sm font-medium tracking-wide">正在從雲端載入票券資訊...</p>
+                                    </div>
+                                ) : redeemTicket ? (
+                                    <>
+                                        <div className="text-center space-y-2">
+                                            <p className="text-[10px] tracking-[0.2em] text-pink-500 font-bold uppercase">
+                                                {redeemTicket.storeName || '使用店家'}
+                                            </p>
+                                            <h2 className="text-xl font-bold text-stone-800 leading-tight">
+                                                {redeemTicket.itemName || '兌換品項'}
+                                            </h2>
+                                            {redeemTicket.price ? (
+                                                <p className="text-sm font-semibold text-stone-500 mt-1">
+                                                    NT$ {redeemTicket.price}
+                                                </p>
+                                            ) : null}
+                                        </div>
+
+                                        {/* 圖片條碼區域 */}
+                                        <div 
+                                            className="w-full aspect-video rounded-xl bg-stone-100 border border-stone-200 overflow-hidden relative flex flex-col items-center justify-center p-2 cursor-pointer group"
+                                            onClick={() => setIsRedeemZoomed(true)}
+                                        >
+                                            {redeemTicket.imageUrl ? (
+                                                <>
+                                                    <img 
+                                                        src={redeemTicket.imageUrl} 
+                                                        alt="Barcode" 
+                                                        className="w-full h-full object-contain filter drop-shadow-md select-none"
+                                                    />
+                                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+                                                        <LucideScan className="text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md" size={24}/>
+                                                    </div>
+                                                </>
+                                            ) : (
+
+
+                                                <div className="text-stone-400 flex flex-col items-center justify-center gap-2">
+                                                    <LucideTicket size={48} className="text-stone-300"/>
+                                                    <span className="text-xs font-bold">純文字提醒票券（無條碼截圖）</span>
+                                                    {redeemTicket.authCode && (
+                                                        <span className="text-base font-mono font-bold text-stone-700 bg-stone-200 px-3 py-1 rounded-lg mt-2">
+                                                            {redeemTicket.authCode}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* 到期日 */}
+                                        <div className="flex items-center justify-center gap-2 text-xs py-2 px-3 bg-stone-50 rounded-lg border border-stone-100 font-medium">
+                                            <LucideCalendar size={14} className="text-stone-400"/>
+                                            <span>有效期限：</span>
+                                            <span className={checkIsExpired(redeemTicket.expiryDate, redeemTicket.isNoExpiry) ? 'text-red-500 font-bold' : 'text-stone-600'}>
+                                                {redeemTicket.isNoExpiry ? '無期限' : redeemTicket.expiryDate.replace(/-/g, '.')}
+                                            </span>
+                                        </div>
+
+                                        {/* 備註欄 (有資料才顯示) */}
+                                        {redeemTicket.notes ? (
+                                            <div className="bg-stone-50 border border-stone-100 rounded-xl p-3 text-xs text-stone-600 space-y-1">
+                                                <p className="font-bold text-stone-400 text-[10px] tracking-wider uppercase">備註說明</p>
+                                                <p className="leading-relaxed whitespace-pre-wrap">{redeemTicket.notes}</p>
+                                            </div>
+                                        ) : null}
+
+                                        {/* 控制按鈕 */}
+                                        <div className="pt-4 border-t border-stone-100">
+                                            {redeemTicket.isUsed || redeemSuccess ? (
+                                                <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 text-center space-y-2 animate-in zoom-in-95 duration-200">
+                                                    <LucideCheckCircle size={32} className="mx-auto text-emerald-500"/>
+                                                    <p className="text-sm font-bold text-emerald-800">此票券已成功兌換完成！</p>
+                                                    <p className="text-[10px] text-emerald-600">已自動同步至您的雲端試算表與錢包</p>
+                                                </div>
+                                            ) : (
+                                                <button 
+                                                    onClick={handleRedeemConfirm}
+                                                    disabled={isRedeeming}
+                                                    className={`w-full py-4 rounded-xl bg-stone-800 text-white font-medium text-sm tracking-widest transition-all hover:bg-stone-700 active:scale-[0.98] shadow-lg flex items-center justify-center gap-2
+                                                        ${isRedeeming ? 'opacity-80 cursor-wait' : ''}`}
+                                                >
+                                                    {isRedeeming ? (
+                                                        <LucideLoader2 className="animate-spin" size={16}/>
+                                                    ) : (
+                                                        <LucideCheckCircle size={16}/>
+                                                    )}
+                                                    <span>{isRedeeming ? '處理中...' : '✅ 我已兌換完成'}</span>
+                                                </button>
+                                            )}
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="text-center py-12 space-y-4">
+                                        <LucideAlertTriangle className="text-amber-500 mx-auto animate-bounce" size={48}/>
+                                        <h3 className="text-base font-bold text-stone-800">找不到此票券資料</h3>
+                                        <p className="text-xs text-stone-400 leading-relaxed max-w-[250px] mx-auto">
+                                            此票券可能已被刪除，或是您尚未與此 Google 帳號的試算表進行同步。
+                                        </p>
+                                        <button 
+                                            onClick={() => window.location.href = window.location.origin + window.location.pathname}
+                                            className="px-4 py-2 bg-stone-800 text-white rounded-lg text-xs font-medium hover:bg-stone-700 transition-colors"
+                                        >
+                                            回小金庫主畫面
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        {/* 全螢幕條碼放大檢視 */}
+                        {isRedeemZoomed && redeemTicket && redeemTicket.imageUrl && (
+                            <div 
+                                className="fixed inset-0 z-[100] flex items-center justify-center bg-stone-900/95 backdrop-blur-sm p-4 animate-in fade-in duration-200 cursor-pointer"
+                                onClick={() => setIsRedeemZoomed(false)}
+                            >
+                                <button className="absolute top-6 right-6 text-white/70 hover:text-white p-2"><LucideX size={32}/></button>
+                                <img 
+                                    src={redeemTicket.imageUrl} 
+                                    alt="Zoomed Barcode" 
+                                    className="max-w-full max-h-[80vh] object-contain shadow-2xl rounded-sm select-none"
+                                    onClick={e => e.stopPropagation()}
+                                />
+                                <div className="absolute bottom-10 left-0 w-full text-center pointer-events-none">
+                                    <p className="text-white/50 text-xs tracking-widest font-light">點擊任意處關閉</p>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+            }
+
+
+            // ── 渲染：主錢包 App ──────────────────────────────────────────────
+            return (
+                <div className="min-h-screen w-full bg-[#f5f5f1] pb-32 relative text-stone-800 font-sans selection:bg-stone-200">
+                <div className="max-w-md mx-auto min-h-screen bg-[#f5f5f1] shadow-2xl overflow-hidden relative flex flex-col">
+
+                    {/* ── Header ── */}
+                    <header className="sticky top-0 bg-[#f5f5f1]/90 backdrop-blur-md z-10 border-b border-stone-200/50 shadow-sm">
+                        <div className="px-6 pt-10 pb-4">
+                            <div className="flex justify-between items-end mb-4">
+                                <div>
+                                    <p className="text-[10px] tracking-[0.2em] text-stone-400 font-bold uppercase mb-1">
+                                        {geminiKey ? '✨ Gemini AI' : '⚠️ 未設定OCR'} ·&nbsp;
+                                        {isDriveReady ? '☁️ Drive 已啟用' : '本機儲存'}
+                                    </p>
+                                    <h1 className="text-2xl font-medium text-stone-800 tracking-tight flex items-center gap-2">
+                                        <LucidePiggyBank className="text-pink-500" size={28}/>
+                                        {appTitle}
+                                    </h1>
+                                </div>
+                                <button onClick={() => setShowSettings(true)} className="text-stone-400 hover:text-stone-600 transition-colors p-2">
+                                    <LucideSettings size={20}/>
+                                </button>
+                            </div>
+                            <div className="mb-6">
+                                <input type="text" placeholder="搜尋名稱、店家、備註..."
+                                    className="w-full px-4 py-2 bg-white border border-stone-200 rounded-lg focus:border-stone-800 transition-all text-stone-700 outline-none placeholder-stone-400 text-sm"
+                                    value={searchQuery} onChange={e => { setRecentlyId(null); setSearchQuery(e.target.value); }}
+                                />
+                            </div>
+                            <div className="flex p-1 bg-stone-200/50 rounded-xl">
+                                {['available','used','expired'].map(tab => (
+                                    <button key={tab}
+                                        onClick={() => { setRecentlyId(null); setActiveTab(tab); }}
+                                        className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all duration-300 ${activeTab===tab ? 'bg-white text-stone-800 shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}
+                                    >
+                                        {tab==='available' && <LucideTicket size={14}/>}
+                                        {tab==='used'      && <LucideCheckCircle size={14}/>}
+                                        {tab==='expired'   && <LucideArchive size={14}/>}
+                                        <span>{tab==='available'?'可使用':tab==='used'?'已使用':'已過期'}</span>
+                                        {activeTab!==tab && tabCounts[tab]>0 &&
+                                            <span className="ml-1 bg-stone-300 text-stone-600 px-1.5 rounded-full text-[9px] min-w-[14px] text-center">{tabCounts[tab]}</span>
+                                        }
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* ── Main ── */}
+                    <main className="px-6 pt-6 flex-grow pb-36">
+                        {/* 錯誤提示 */}
+                        {error && (
+                            <div className="mb-6 p-4 bg-red-50 border border-red-100 text-red-800 text-xs rounded-lg flex items-start gap-2">
+                                <LucideX size={14} className="mt-0.5 flex-shrink-0"/>
+                                <span className="flex-grow">{error}</span>
+                                <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 ml-auto"><LucideX size={12}/></button>
+                            </div>
+                        )}
+                        {/* 上傳進度 */}
+                        {isUploading && (
+                            <div className="mb-6 p-8 bg-white border border-stone-200 rounded-xl text-center shadow-sm animate-slide-up">
+                                <LucideLoader2 className="animate-spin mx-auto text-stone-400 mb-3" size={32}/>
+                                <p className="text-stone-600 text-sm font-medium tracking-wide">{uploadStatus}</p>
+                                <p className="text-stone-400 text-xs mt-2">
+                                    {geminiKey ? 'Gemini AI 智慧辨識 + Drive 同步' : '無 Gemini Key，將在詳情頁手動填寫'}
+                                </p>
+                            </div>
+                        )}
+                        {/* 票券列表 */}
+                        {filteredTickets.length > 0 ? (
+                            <div className="animate-slide-up">
+                                {filteredTickets.map(ticket => (
+                                    <TicketCard key={ticket.id} ticket={ticket}
+                                        onToggleUsed={handleToggleUsed}
+                                        onViewDetails={handleOpenDetails}
+                                        onScanView={handleOpenScan}
+                                        isExpired={checkIsExpired(ticket.expiryDate, ticket.isNoExpiry)}
+                                        isExpiringSoon={checkIsExpiringSoon(ticket.expiryDate, ticket.isNoExpiry)}
+                                        isRecentlyViewed={ticket.id === recentlyId}
+                                    />
+                                ))}
+                            </div>
+                        ) : !isUploading && (
+                            <div className="flex flex-col items-center justify-center py-16 text-stone-300">
+                                {activeTab==='available' && <LucideTicket className="w-12 h-12 mb-3 opacity-20"/>}
+                                {activeTab==='used'      && <LucideCheckCircle className="w-12 h-12 mb-3 opacity-20"/>}
+                                {activeTab==='expired'   && <LucideArchive className="w-12 h-12 mb-3 opacity-20"/>}
+                                <p className="text-stone-400 text-sm font-light tracking-widest uppercase">
+                                    {activeTab==='available'?'沒有可使用的票券':activeTab==='used'?'沒有已使用的票券':'沒有已過期的票券'}
+                                </p>
+                                {activeTab==='available' && <p className="text-stone-300 text-xs mt-2">點擊下方按鈕新增</p>}
+                            </div>
+                        )}
+                        {/* 批次清空按鈕 */}
+                        {filteredTickets.length > 0 && activeTab !== 'available' && (
+                            <div className="mt-8 mb-4 text-center">
+                                <button onClick={handleDeleteAllClick}
+                                    className="text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-4 py-2 rounded-full transition-colors flex items-center justify-center gap-1 mx-auto border border-transparent hover:border-red-100">
+                                    <LucideTrash2 size={14}/>
+                                    <span>一鍵清空{activeTab==='used'?'已使用':'已過期'}項目</span>
+                                </button>
+                            </div>
+                        )}
+                    </main>
+
+                    {/* ══ Modal：清空確認 ═══════════════════════════════════════ */}
+                    {showDelAll && (
+                        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-stone-900/60 backdrop-blur-sm p-6" onClick={() => setShowDelAll(false)}>
+                            <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+                                <div className="p-6 text-center">
+                                    <div className="w-12 h-12 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4"><LucideAlertTriangle className="text-red-500" size={24}/></div>
+                                    <h3 className="text-lg font-bold text-stone-800 mb-2">確認清空</h3>
+                                    <p className="text-stone-500 text-sm mb-6">
+                                        確定清空所有【{activeTab==='used'?'已使用':'已過期'}】票券？<br/>
+                                        此動作<span className="text-red-500 font-bold">無法復原</span>。
+                                    </p>
+                                    <div className="flex gap-3">
+                                        <button onClick={() => setShowDelAll(false)} className="flex-1 py-3 rounded-xl bg-stone-100 text-stone-600 font-medium text-sm hover:bg-stone-200">取消</button>
+                                        <button onClick={confirmDeleteAll} className="flex-1 py-3 rounded-xl bg-red-500 text-white font-medium text-sm hover:bg-red-600 shadow-lg shadow-red-200">確定清空</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ══ Modal：全螢幕票券檢視 ══════════════════════════════════ */}
+                    {scanTicket && (
+                        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-stone-900/95 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={handleCloseScan}>
+                            <button className="absolute top-6 right-6 text-white/70 hover:text-white p-2"><LucideX size={32}/></button>
+                            {scanTicket.imageUrl
+                                ? <img src={scanTicket.imageUrl} alt="Scan View" className="max-w-full max-h-[80vh] object-contain shadow-2xl rounded-sm" onClick={e => e.stopPropagation()}/>
+                                : <div className="bg-white p-10 rounded-2xl flex flex-col items-center justify-center text-center max-w-xs shadow-2xl" onClick={e => e.stopPropagation()}>
+                                    <div className="w-20 h-20 bg-stone-100 rounded-full flex items-center justify-center mb-6"><LucideAppWindow size={40} className="text-stone-400"/></div>
+                                    <h3 className="text-lg font-bold text-stone-800 mb-2">{scanTicket.itemName || '提醒事項'}</h3>
+                                    <p className="text-stone-500 text-sm leading-relaxed mb-4">此項目沒有截圖。<br/>請開啟對應的 APP 使用票券。</p>
+                                    <p className="text-xs text-stone-400">{scanTicket.storeName}</p>
+                                  </div>
+                            }
+                            <div className="absolute bottom-10 left-0 w-full text-center pointer-events-none">
+                                <p className="text-white/50 text-xs tracking-widest font-light">點擊任意處關閉</p>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ══ Modal：票券詳情 / 編輯 ════════════════════════════════ */}
+                    {detailsTicket && (
+                        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-stone-900/40 backdrop-blur-sm sm:p-6" onClick={() => handleCloseDetails(false)}>
+                            <div className="bg-white w-full max-w-sm sm:rounded-2xl rounded-t-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-y-auto animate-in slide-in-from-bottom duration-300" onClick={e => e.stopPropagation()}>
+                                {/* 標題列 */}
+                                <div className="sticky top-0 bg-white z-10 px-6 py-4 border-b border-stone-100 flex justify-between items-center rounded-t-2xl">
+                                    <h3 className="text-lg font-bold text-stone-800 flex items-center gap-2">
+                                        <LucideEdit3 size={20} className="text-stone-400"/>
+                                        {draftId === detailsTicket.id ? '新增 Coupon' : '編輯票券'}
+                                    </h3>
+                                    <div className="flex gap-1">
+                                        <button onClick={() => deleteTicket(detailsTicket.id)} className="text-stone-300 hover:text-red-500 hover:bg-red-50 p-2 rounded-full transition-colors"><LucideTrash2 size={18}/></button>
+                                        <button onClick={() => handleCloseDetails(false)} className="text-stone-300 hover:text-stone-800 hover:bg-stone-100 p-2 rounded-full transition-colors"><LucideX size={18}/></button>
+                                    </div>
+                                </div>
+
+                                <div className="p-6 space-y-5">
+                                    {/* 截圖縮圖 */}
+                                    <div className="w-full aspect-video overflow-hidden rounded-lg bg-stone-100 border border-stone-100 relative group cursor-pointer" onClick={() => handleOpenScan(detailsTicket)}>
+                                        {detailsTicket.imageUrl
+                                            ? <><img src={detailsTicket.imageUrl} alt="Thumbnail" className="w-full h-full object-cover"/>
+                                                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center"><LucideScan className="text-white opacity-0 group-hover:opacity-100 drop-shadow-md"/></div></>
+                                            : <div className="w-full h-full flex flex-col items-center justify-center text-stone-400 gap-2"><LucideAppWindow size={32}/><span className="text-xs font-medium">純文字提醒（無截圖）</span></div>
+                                        }
+                                    </div>
+
+                                    {/* Drive 備份狀態 */}
+                                    {detailsTicket.driveFileId && (
+                                        <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5">
+                                            <LucideHardDrive size={15} className="text-blue-400 flex-shrink-0"/>
+                                            <div className="flex-grow min-w-0">
+                                                <p className="text-xs font-bold text-blue-600">截圖已備份至 Google Drive</p>
+                                                <p className="text-[10px] text-blue-400">
+                                                    {detailsTicket.isUsed ? '📁 已使用資料夾' : '📁 待使用資料夾'}
+                                                </p>
+                                            </div>
+                                            <LucideCheck size={14} className="text-blue-400 flex-shrink-0"/>
+                                        </div>
+                                    )}
+
+                                    {/* 店家 */}
+                                    <div>
+                                        <label className="flex items-center gap-1.5 text-[10px] tracking-widest text-stone-400 uppercase font-bold mb-2"><LucideStore size={12}/>使用店家</label>
+                                        <input type="text" className="w-full text-sm border-b border-stone-200 focus:border-stone-800 outline-none pb-1 font-medium bg-transparent placeholder-stone-300 text-stone-800"
+                                            placeholder="例如：星巴克" value={detailsTicket.storeName}
+                                            onChange={e => updateField(detailsTicket.id, 'storeName', e.target.value)}/>
+                                    </div>
+
+                                    {/* 品項 */}
+                                    <div>
+                                        <label className="flex items-center gap-1.5 text-[10px] tracking-widest text-stone-400 uppercase font-bold mb-2"><LucideTicket size={12}/>兌換品項</label>
+                                        <input type="text" className="w-full text-sm font-bold text-stone-800 border-b border-stone-200 focus:border-stone-800 outline-none pb-1 bg-transparent placeholder-stone-300"
+                                            placeholder="例如：大杯拿鐵" value={detailsTicket.itemName}
+                                            onChange={e => updateField(detailsTicket.id, 'itemName', e.target.value)}/>
+                                    </div>
+
+                                    {/* 來源 */}
+                                    <div>
+                                        <label className="flex items-center gap-1.5 text-[10px] tracking-widest text-stone-400 uppercase font-bold mb-2"><LucideSmartphone size={12}/>來源 APP / 管道</label>
+                                        <input type="text" className="w-full text-sm border-b border-stone-200 focus:border-stone-800 outline-none pb-1 font-medium bg-transparent placeholder-stone-300 text-stone-800"
+                                            placeholder="例如：Momo、蝦皮、Line禮物..." value={detailsTicket.source || ''}
+                                            onChange={e => updateField(detailsTicket.id, 'source', e.target.value)}/>
+                                    </div>
+
+                                    {/* 日期 & 金額 */}
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="bg-stone-50 p-3 rounded-lg">
+                                            <div className="flex justify-between items-center mb-2">
+                                                <label className="flex items-center gap-1.5 text-[10px] tracking-widest text-stone-400 uppercase font-bold"><LucideCalendar size={12}/>有效期限</label>
+                                                <label className="flex items-center gap-1 cursor-pointer group">
+                                                    <div className={`w-3 h-3 rounded-sm border flex items-center justify-center transition-colors ${detailsTicket.isNoExpiry ? 'bg-stone-800 border-stone-800' : 'border-stone-300 group-hover:border-stone-400'}`}>
+                                                        {detailsTicket.isNoExpiry && <LucideCheck size={8} className="text-white"/>}
+                                                    </div>
+                                                    <input type="checkbox" className="hidden" checked={detailsTicket.isNoExpiry||false} onChange={e => updateField(detailsTicket.id,'isNoExpiry',e.target.checked)}/>
+                                                    <span className={`text-[10px] font-bold ${detailsTicket.isNoExpiry?'text-stone-800':'text-stone-400'}`}>無期限</span>
+                                                </label>
+                                            </div>
+                                            {detailsTicket.isNoExpiry
+                                                ? <div className="w-full py-1 text-sm text-stone-400 font-medium flex items-center gap-2"><LucideInfinity size={16}/><span>無使用期限</span></div>
+                                                : <input type="date" className="w-full bg-transparent text-sm text-stone-700 font-medium outline-none"
+                                                    value={detailsTicket.expiryDate?.replace(/\./g,'-')||''}
+                                                    onChange={e => updateField(detailsTicket.id,'expiryDate',e.target.value)}/>
+                                            }
+                                        </div>
+                                        <div className="bg-stone-50 p-3 rounded-lg">
+                                            <label className="flex items-center gap-1.5 text-[10px] tracking-widest text-stone-400 uppercase font-bold mb-2"><LucideCreditCard size={12}/>金額</label>
+                                            <div className="flex items-center">
+                                                <span className="text-stone-400 text-xs mr-1">NT$</span>
+                                                <input type="number" className="w-full bg-transparent text-sm text-stone-700 font-medium outline-none" placeholder="-"
+                                                    value={detailsTicket.price||''}
+                                                    onChange={e => updateField(detailsTicket.id,'price',e.target.value)}/>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* 使用日期（已使用時顯示） */}
+                                    {detailsTicket.isUsed && (
+                                        <div className="bg-stone-50 p-3 rounded-lg border border-stone-200">
+                                            <label className="flex items-center gap-1.5 text-[10px] tracking-widest text-stone-400 uppercase font-bold mb-2"><LucideCalendarCheck size={12}/>使用日期</label>
+                                            <input type="date" className="w-full bg-transparent text-sm text-stone-700 font-medium outline-none"
+                                                value={detailsTicket.usedDate||''} onChange={e => updateField(detailsTicket.id,'usedDate',e.target.value)}/>
+                                        </div>
+                                    )}
+
+                                    {/* 連結 / 序號 / 備註 */}
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="flex items-center gap-1.5 text-[10px] tracking-widest text-stone-400 uppercase font-bold mb-2"><LucideExternalLink size={12}/>相關連結</label>
+                                            <div className="flex items-center gap-2 border-b border-stone-200 pb-1">
+                                                <input type="text" className="flex-grow text-sm outline-none text-stone-700 bg-transparent placeholder-stone-300" placeholder="https://..."
+                                                    value={detailsTicket.url||''} onChange={e => updateField(detailsTicket.id,'url',e.target.value)}/>
+                                                {detailsTicket.url && <a href={detailsTicket.url.startsWith('http')?detailsTicket.url:`https://${detailsTicket.url}`} target="_blank" rel="noreferrer" className="text-stone-400 hover:text-stone-800"><LucideExternalLink size={14}/></a>}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="flex items-center gap-1.5 text-[10px] tracking-widest text-stone-400 uppercase font-bold mb-2"><LucideScan size={12}/>認證碼 / 序號</label>
+                                            <input type="text" className="w-full text-sm border-b border-stone-200 focus:border-stone-800 outline-none pb-1 font-mono tracking-wider bg-transparent placeholder-stone-300"
+                                                placeholder="輸入序號..." value={detailsTicket.authCode||''}
+                                                onChange={e => updateField(detailsTicket.id,'authCode',e.target.value)}/>
+                                        </div>
+                                        <div>
+                                            <label className="flex items-center gap-1.5 text-[10px] tracking-widest text-stone-400 uppercase font-bold mb-2"><LucideSmartphone size={12}/>指定提醒對象 (LINE)</label>
+                                            <input type="text" className="w-full text-sm border-b border-stone-200 focus:border-stone-800 outline-none pb-1 font-medium bg-transparent placeholder-stone-300 text-stone-800"
+                                                placeholder="預設為「自己」，可填：老公、妹妹 等" value={detailsTicket.owner||''}
+                                                onChange={e => updateField(detailsTicket.id,'owner',e.target.value)}/>
+                                        </div>
+                                        <div>
+                                            <label className="flex items-center gap-1.5 text-[10px] tracking-widest text-stone-400 uppercase font-bold mb-2"><LucideClock size={12}/>定時提醒時間 (LINE)</label>
+                                            <input type="time" className="w-full bg-transparent text-sm text-stone-700 font-medium outline-none border-b border-stone-200 focus:border-stone-800 pb-1"
+                                                value={detailsTicket.alertTime||''}
+                                                onChange={e => updateField(detailsTicket.id, 'alertTime', e.target.value)}/>
+                                            <p className="text-[10px] text-stone-400 mt-1">若設定，將於設定當天此時間的 10 分鐘內向提醒對象發送通知。</p>
+                                        </div>
+                                        <div>
+                                            <div className="flex justify-between items-center mb-2">
+                                                <label className="text-[10px] tracking-widest text-stone-400 uppercase font-bold">備註</label>
+                                                {detailsTicket.notes && <button onClick={() => updateField(detailsTicket.id,'notes','')} className="text-[10px] text-stone-400 hover:text-red-500 flex items-center gap-1 px-2 py-1 hover:bg-red-50 rounded"><LucideEraser size={12}/>清除</button>}
+                                            </div>
+                                            <textarea rows={4} className="w-full text-sm border border-stone-200 rounded-lg p-3 focus:border-stone-800 outline-none resize-none bg-stone-50 leading-relaxed"
+                                                placeholder="手動輸入補充資訊..." value={detailsTicket.notes||''}
+                                                onChange={e => updateField(detailsTicket.id,'notes',e.target.value)}/>
+                                        </div>
+                                    </div>
+
+                                    <button onClick={() => handleCloseDetails(true)}
+                                        className="w-full py-3.5 rounded-xl bg-stone-800 text-white font-medium text-sm tracking-widest active:scale-[0.98] transition-all hover:bg-stone-700 hover:shadow-lg">
+                                        儲存變更
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ══ Modal：設定 ═══════════════════════════════════════════ */}
+                    {showSettings && (
+                        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-stone-900/60 backdrop-blur-sm p-6" onClick={() => setShowSettings(false)}>
+                            <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+                                <div className="px-6 py-5 border-b border-stone-100 flex justify-between items-center bg-stone-50/50">
+                                    <h3 className="text-lg font-bold text-stone-800 flex items-center gap-2"><LucideSettings size={20}/>設定</h3>
+                                    <button onClick={() => setShowSettings(false)} className="text-stone-400 hover:text-stone-600"><LucideX size={20}/></button>
+                                </div>
+                                <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
+
+                                    {/* App 名稱 */}
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold text-stone-500 uppercase tracking-widest">應用程式名稱</label>
+                                        <div className="flex items-center gap-2 border border-stone-200 rounded-xl px-3 py-3 bg-stone-50 focus-within:border-stone-800 focus-within:bg-white transition-all">
+                                            <LucidePenLine size={18} className="text-stone-400"/>
+                                            <input type="text" value={appTitle} onChange={e => setAppTitle(e.target.value)}
+                                                className="flex-grow bg-transparent outline-none text-stone-800 font-medium text-sm" placeholder="例如：小明的錢包"/>
+                                        </div>
+                                    </div>
+
+                                    <div className="w-full h-px bg-stone-100"/>
+
+                                    {/* Gemini API Key */}
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold text-stone-500 uppercase tracking-widest flex items-center gap-1.5">
+                                            <LucideSparkles size={14} className="text-purple-400"/>
+                                            Gemini AI 辨識
+                                        </label>
+                                        <div className="flex items-center gap-2 border border-stone-200 rounded-xl px-3 py-3 bg-stone-50 focus-within:border-purple-300 focus-within:bg-white transition-all">
+                                            <LucideSparkles size={16} className="text-purple-400 flex-shrink-0"/>
+                                            <input
+                                                type={showKey ? 'text' : 'password'}
+                                                value={geminiKey}
+                                                onChange={e => setGeminiKey(e.target.value)}
+                                                className="flex-grow bg-transparent outline-none text-stone-800 font-medium text-sm font-mono min-w-0"
+                                                placeholder="貼上 Gemini API Key..."
+                                            />
+                                            <button onClick={() => setShowKey(!showKey)} className="text-stone-300 hover:text-stone-600 flex-shrink-0">
+                                                {showKey ? <LucideEyeOff size={16}/> : <LucideEye size={16}/>}
+                                            </button>
+                                        </div>
+                                        <div className="flex items-center justify-between px-1">
+                                            <span className={`text-[10px] font-bold ${geminiKey ? 'text-purple-500' : 'text-stone-400'}`}>
+                                                {geminiKey ? '✅ AI 辨識已啟用' : '⚠️ 未設定，請先申請'}
+                                            </span>
+                                            <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer"
+                                                className="text-[10px] text-purple-400 hover:text-purple-600 underline font-medium">
+                                                免費申請 →
+                                            </a>
+                                        </div>
+                                    </div>
+
+                                    <div className="w-full h-px bg-stone-100"/>
+
+                                    {/* GAS URL + Drive 開關 */}
+                                    <div className="space-y-3">
+                                        <label className="text-xs font-bold text-stone-500 uppercase tracking-widest flex items-center gap-1">
+                                            <LucideCloud size={14}/>Google Script URL
+                                        </label>
+                                        <div className="flex items-center gap-2 border border-stone-200 rounded-xl px-3 py-3 bg-stone-50 focus-within:border-stone-800 focus-within:bg-white transition-all">
+                                            <LucideLink size={18} className="text-stone-400 flex-shrink-0"/>
+                                            <input type="text" value={gasUrl} onChange={e => setGasUrl(e.target.value)}
+                                                className="flex-grow bg-transparent outline-none text-stone-800 font-medium text-sm min-w-0"
+                                                placeholder="https://script.google.com/macros/s/..."/>
+                                        </div>
+
+                                        {/* Drive 截圖同步開關 */}
+                                        <div className="flex items-center justify-between p-3 bg-stone-50 rounded-xl border border-stone-100">
+                                            <div className="flex items-center gap-2.5">
+                                                <LucideHardDrive size={18} className={isDriveReady ? 'text-blue-500' : 'text-stone-300'}/>
+                                                <div>
+                                                    <p className="text-xs font-bold text-stone-700">Google Drive 截圖同步</p>
+                                                    <p className="text-[10px] text-stone-400 mt-0.5">
+                                                        {isDriveReady ? '✅ 啟用中 – 截圖自動上傳' : gasUrl ? '需開啟開關以啟用' : '請先填入 GAS URL'}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => setDriveEnabled(!driveEnabled)}
+                                                className={`w-12 h-6 rounded-full transition-all duration-300 relative flex-shrink-0 ${driveEnabled ? 'bg-blue-500' : 'bg-stone-200'}`}
+                                            >
+                                                <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform duration-300 shadow-sm ${driveEnabled ? 'translate-x-6' : 'translate-x-0.5'}`}/>
+                                            </button>
+                                        </div>
+
+                                        {/* Drive 使用說明 */}
+                                        {driveEnabled && (
+                                            <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-[10px] text-blue-600 space-y-1">
+                                                <p className="font-bold flex items-center gap-1"><LucideFolderOpen size={10}/>Drive 資料夾結構</p>
+                                                <p>📁 花花大金庫 / 待使用 → 新增票券時自動上傳</p>
+                                                <p>📁 花花大金庫 / 已使用 → 打勾後自動移動</p>
+                                                <p className="text-blue-400 mt-1">💡 需先更新 GAS 程式碼才能使用此功能</p>
+                                            </div>
+                                        )}
+
+                                        {/* 同步按鈕 */}
+                                        <button onClick={handleSyncToCloud} disabled={isSyncing || !gasUrl}
+                                            className={`w-full py-3 rounded-xl font-medium text-sm transition-all flex items-center justify-center gap-2
+                                                ${isSyncing ? 'bg-stone-100 text-stone-400' : 'bg-stone-800 text-white hover:bg-stone-700 active:scale-[0.98]'}`}>
+                                            {isSyncing ? <LucideLoader2 className="animate-spin" size={16}/> : <LucideCloudUpload size={16}/>}
+                                            {isSyncing ? '同步中...' : '立即同步至 Google Sheet'}
+                                            {syncResult === 'success' && <LucideCheck size={16} className="text-emerald-400"/>}
+                                        </button>
+                                        <div className="flex items-center justify-between text-[10px] text-stone-400 px-1">
+                                            <span>同步票券清單至試算表</span>
+                                            <span className="flex items-center gap-1"><LucideHistory size={10}/>{lastSyncTime ? `上次：${lastSyncTime}` : '尚無紀錄'}</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="w-full h-px bg-stone-100"/>
+
+                                    {/* LINE Bot 提醒設定 */}
+                                    <div className="space-y-3">
+                                        <label className="text-xs font-bold text-stone-500 uppercase tracking-widest flex items-center gap-1.5">
+                                            <LucideSmartphone size={14} className="text-emerald-500"/>
+                                            LINE 機器人提醒設定
+                                        </label>
+                                        
+                                        {/* Token 輸入框 */}
+                                        <div className="space-y-1">
+                                            <span className="text-[10px] font-bold text-stone-400">Channel Access Token</span>
+                                            <div className="flex items-center gap-2 border border-stone-200 rounded-xl px-3 py-2.5 bg-stone-50 focus-within:border-emerald-300 focus-within:bg-white transition-all">
+                                                <LucideLink size={16} className="text-emerald-500 flex-shrink-0"/>
+                                                <input
+                                                    type={showLineToken ? 'text' : 'password'}
+                                                    value={lineToken}
+                                                    onChange={e => setLineToken(e.target.value)}
+                                                    className="flex-grow bg-transparent outline-none text-stone-800 font-medium text-xs font-mono min-w-0"
+                                                    placeholder="貼上 Channel Access Token..."
+                                                />
+                                                <button onClick={() => setShowLineToken(!showLineToken)} className="text-stone-300 hover:text-stone-600 flex-shrink-0">
+                                                    {showLineToken ? <LucideEyeOff size={14}/> : <LucideEye size={14}/>}
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* User ID 輸入框 */}
+                                        <div className="space-y-1">
+                                            <span className="text-[10px] font-bold text-stone-400">您的 User ID</span>
+                                            <div className="flex items-center gap-2 border border-stone-200 rounded-xl px-3 py-2.5 bg-stone-50 focus-within:border-emerald-300 focus-within:bg-white transition-all">
+                                                <LucideSmartphone size={16} className="text-emerald-500 flex-shrink-0"/>
+                                                <input
+                                                    type="text"
+                                                    value={lineUserId}
+                                                    onChange={e => setLineUserId(e.target.value)}
+                                                    className="flex-grow bg-transparent outline-none text-stone-800 font-medium text-xs font-mono min-w-0"
+                                                    placeholder="貼上 LINE User ID (U... 開頭)..."
+                                                />
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-[10px] text-emerald-700 space-y-1">
+                                            <p className="font-bold">💡 啟用方式：</p>
+                                            <p>1. 填妥上方欄位後，點擊上方的「立即同步至 Google Sheet」存入後台。</p>
+                                            <p>2. 在 Google Apps Script 中部署最新程式碼並設定每日定時觸發器即可啟用。</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="w-full h-px bg-stone-100"/>
+
+                                    {/* 備份 */}
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold text-stone-500 uppercase tracking-widest">備份資料</label>
+                                        <button onClick={exportData} className="w-full flex items-center justify-center gap-3 py-4 rounded-xl bg-stone-800 text-white font-medium text-sm tracking-wide active:scale-[0.98] transition-all shadow-lg hover:bg-stone-700">
+                                            <LucideDownload size={18}/>匯出備份檔案
+                                        </button>
+                                        <div className="flex items-center justify-between text-[10px] text-stone-400 px-1">
+                                            <span>下載 JSON 檔案</span>
+                                            <span className="flex items-center gap-1"><LucideHistory size={10}/>{lastBkTime ? `上次：${lastBkTime}` : '尚無備份'}</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="w-full h-px bg-stone-100"/>
+
+                                    {/* 還原 */}
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold text-stone-500 uppercase tracking-widest">還原資料</label>
+                                        <button onClick={() => importFileRef.current?.click()}
+                                            className="w-full flex items-center justify-center gap-3 py-4 rounded-xl bg-rose-50 border border-rose-100 text-rose-600 font-medium text-sm active:scale-[0.98] transition-all hover:bg-rose-100">
+                                            <LucideUpload size={18}/>匯入還原檔案
+                                        </button>
+                                        <p className="text-[10px] text-rose-400 text-center flex items-center justify-center gap-1">
+                                            <LucideAlertCircle size={10}/>警告：匯入將完全覆蓋現有資料
+                                        </p>
+                                    </div>
+
+                                    <div className="w-full h-px bg-stone-100"/>
+                                    <div className="text-center">
+                                        <p className="text-[10px] text-stone-300 font-mono tracking-widest">V3.6 · Gemini AI + Drive Sync</p>
+                                    </div>
+                                </div>
+                                <input type="file" ref={importFileRef} onChange={handleImport} accept=".json" className="hidden"/>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ── 底部按鈕 ── */}
+                    <div className="fixed bottom-8 left-1/2 -translate-x-1/2 w-full max-w-md px-6 z-20 pointer-events-none flex gap-3">
+                        <button onClick={handleAddManual}
+                            className="flex-1 py-4 rounded-2xl bg-white text-stone-800 font-medium text-sm tracking-wider transition-all shadow-xl pointer-events-auto flex items-center justify-center gap-2 hover:bg-stone-50 active:scale-[0.98] border border-stone-100">
+                            <LucideBellPlus size={18} className="text-pink-500"/><span>新增提醒</span>
+                        </button>
+                        <button onClick={() => fileInputRef.current?.click()} disabled={isUploading}
+                            className={`flex-[2] py-4 rounded-2xl bg-stone-800 text-white font-medium text-sm tracking-[0.15em] transition-all shadow-xl pointer-events-auto flex items-center justify-center gap-3
+                                ${isUploading ? 'opacity-80 cursor-wait' : 'hover:bg-stone-900 active:scale-[0.98] hover:shadow-2xl'}`}>
+                            {isUploading
+                                ? <><LucideLoader2 className="animate-spin" size={18}/><span>處理中...</span></>
+                                : <><LucideScan size={18}/><span>掃描票券</span></>
+                            }
+                        </button>
+                        <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept="image/*" className="hidden"/>
+                    </div>
+
+                </div>
+                </div>
+            );
+        };
+
+        // 🚀 兌換模式下，React 不啟動以節省手機 CPU 開銷，交由 Vanilla JS 原生極速版處理 🚀
+        if (!window.location.search.includes('redeem=')) {
+            const root = createRoot(document.getElementById('root'));
+            root.render(<App/>);
+        }
+    </script>
+    
+    <!-- 註冊 Service Worker 並偵測更新自動重新整理 -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./service-worker.js')
+                    .then(reg => {
+                        console.log('Service Worker 註冊成功，範圍為:', reg.scope);
+                        reg.onupdatefound = () => {
+                            const installingWorker = reg.installing;
+                            installingWorker.onstatechange = () => {
+                                if (installingWorker.state === 'installed') {
+                                    if (navigator.serviceWorker.controller) {
+                                        console.log('偵測到新版本，自動重新整理頁面以套用更新！');
+                                        window.location.reload();
+                                    }
+                                }
+                            };
+                        };
+                    })
+                    .catch(err => {
+                        console.error('Service Worker 註冊失敗:', err);
+                    });
+            });
+        }
+    </script>
+</body>
+</html>
