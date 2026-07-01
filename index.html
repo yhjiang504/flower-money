@@ -263,6 +263,7 @@
                         justify-content: center;
                         padding: 16px;
                         cursor: pointer;
+                        overflow: hidden;
                     }
                     .zoomed-img {
                         max-width: 100%;
@@ -270,6 +271,10 @@
                         object-fit: contain;
                         border-radius: 4px;
                         box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+                        touch-action: none;
+                        transform-origin: center;
+                        user-select: none;
+                        -webkit-user-drag: none;
                     }
                 `;
                 document.head.appendChild(style);
@@ -296,7 +301,7 @@
                     </div>
                     <div class="zoomed-overlay" id="zoomed-view">
                         <img src="" class="zoomed-img" id="zoomed-img-el">
-                        <div style="position:absolute; bottom:40px; width:100%; text-align:center; color:rgba(255,255,255,0.5); font-size:12px; pointer-events:none;">點擊任意處關閉</div>
+                        <div style="position:absolute; bottom:40px; width:100%; text-align:center; color:rgba(255,255,255,0.5); font-size:12px; pointer-events:none;">雙擊條碼可放大/重設，點擊半透明背景關閉</div>
                     </div>
                 `);
                 
@@ -306,8 +311,65 @@
                     const zoomedView = document.getElementById('zoomed-view');
                     const zoomedImgEl = document.getElementById('zoomed-img-el');
                     
+                    let currentScale = 1;
+                    let lastTapTime = 0;
+                    let isDragging = false;
+                    let startX = 0, startY = 0;
+                    let translateX = 0, translateY = 0;
+                    let imageStartX = 0, imageStartY = 0;
+
+                    function updateImageTransform() {
+                        zoomedImgEl.style.transform = `translate(${translateX}px, ${translateY}px) scale(${currentScale})`;
+                        zoomedImgEl.style.transition = isDragging ? 'none' : 'transform 0.15s ease-out';
+                    }
+
+                    zoomedImgEl.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const now = Date.now();
+                        if (now - lastTapTime < 300) {
+                            if (currentScale > 1) {
+                                currentScale = 1;
+                                translateX = 0;
+                                translateY = 0;
+                            } else {
+                                currentScale = 2.5;
+                            }
+                            updateImageTransform();
+                        }
+                        lastTapTime = now;
+                    });
+
+                    zoomedImgEl.addEventListener('touchstart', (e) => {
+                        if (currentScale > 1 && e.touches.length === 1) {
+                            isDragging = true;
+                            startX = e.touches[0].clientX;
+                            startY = e.touches[0].clientY;
+                            imageStartX = translateX;
+                            imageStartY = translateY;
+                        }
+                    });
+
+                    zoomedImgEl.addEventListener('touchmove', (e) => {
+                        if (isDragging && e.touches.length === 1) {
+                            e.preventDefault();
+                            const deltaX = e.touches[0].clientX - startX;
+                            const deltaY = e.touches[0].clientY - startY;
+                            translateX = imageStartX + deltaX;
+                            translateY = imageStartY + deltaY;
+                            updateImageTransform();
+                        }
+                    });
+
+                    zoomedImgEl.addEventListener('touchend', () => {
+                        isDragging = false;
+                    });
+
                     zoomedView.addEventListener('click', () => {
                         zoomedView.style.display = 'none';
+                        currentScale = 1;
+                        translateX = 0;
+                        translateY = 0;
+                        updateImageTransform();
                     });
                     
                     // 獲取 GAS 網址 (優先從 URL 參數，其次從 localStorage)
@@ -771,6 +833,131 @@
         const LINE_USERID_KEY      = 'e_ticket_wallet_line_userid';    // 新增 LINE User ID
 
         // ═══════════════════════════════════════════════════════════════════════
+        //  圖片縮放與拖曳組件 (ZoomableImage)
+        // ═══════════════════════════════════════════════════════════════════════
+        const ZoomableImage = ({ src, alt, className }) => {
+            const [scale, setScale] = useState(1);
+            const [position, setPosition] = useState({ x: 0, y: 0 });
+            const touchStart = useRef({ x: 0, y: 0 });
+            const startPosition = useRef({ x: 0, y: 0 });
+            const initialDistance = useRef(0);
+            const lastTap = useRef(0);
+
+            const handleTouchStart = (e) => {
+                if (e.touches.length === 1) {
+                    touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                    startPosition.current = { ...position };
+                } else if (e.touches.length === 2) {
+                    initialDistance.current = Math.hypot(
+                        e.touches[0].clientX - e.touches[1].clientX,
+                        e.touches[0].clientY - e.touches[1].clientY
+                    );
+                }
+            };
+
+            const handleTouchMove = (e) => {
+                if (e.touches.length === 1 && scale > 1) {
+                    const deltaX = e.touches[0].clientX - touchStart.current.x;
+                    const deltaY = e.touches[0].clientY - touchStart.current.y;
+                    setPosition({
+                        x: startPosition.current.x + deltaX,
+                        y: startPosition.current.y + deltaY
+                    });
+                } else if (e.touches.length === 2) {
+                    const currentDistance = Math.hypot(
+                        e.touches[0].clientX - e.touches[1].clientX,
+                        e.touches[0].clientY - e.touches[1].clientY
+                    );
+                    const factor = currentDistance / (initialDistance.current || 1);
+                    const newScale = Math.min(Math.max(1, factor * scale), 4);
+                    setScale(newScale);
+                }
+            };
+
+            const handleTouchEnd = () => {
+                if (scale === 1) {
+                    setPosition({ x: 0, y: 0 });
+                }
+            };
+
+            const handleDoubleTap = (e) => {
+                e.stopPropagation();
+                const now = Date.now();
+                if (now - lastTap.current < 300) {
+                    if (scale > 1) {
+                        setScale(1);
+                        setPosition({ x: 0, y: 0 });
+                    } else {
+                        setScale(2.5);
+                        setPosition({ x: 0, y: 0 });
+                    }
+                }
+                lastTap.current = now;
+            };
+
+            return (
+                <div className="w-full h-full flex flex-col items-center justify-center relative overflow-hidden select-none">
+                    <div 
+                        className="w-full h-full flex items-center justify-center overflow-hidden"
+                        onTouchStart={handleTouchStart}
+                        onTouchMove={handleTouchMove}
+                        onTouchEnd={handleTouchEnd}
+                        onClick={handleDoubleTap}
+                    >
+                        <img 
+                            src={src} 
+                            alt={alt} 
+                            className={`${className} transition-transform duration-100 ease-out`}
+                            style={{
+                                transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
+                                touchAction: 'none'
+                            }}
+                        />
+                    </div>
+                    
+                    {/* 快捷縮放按鈕與提示 */}
+                    <div className="absolute bottom-16 left-0 w-full flex flex-col items-center gap-2 pointer-events-auto" onClick={e => e.stopPropagation()}>
+                        <div className="flex gap-4 bg-stone-900/80 backdrop-blur px-4 py-2 rounded-full border border-stone-700/50 shadow-lg">
+                            <button 
+                                onClick={() => {
+                                    setScale(prev => {
+                                        const next = Math.max(1, prev - 0.5);
+                                        if (next === 1) setPosition({ x: 0, y: 0 });
+                                        return next;
+                                    });
+                                }}
+                                className="text-white text-xs font-bold hover:text-stone-300 px-2 py-1"
+                            >
+                                🔍- 縮小
+                            </button>
+                            <span className="text-stone-400 text-xs font-medium self-center">
+                                {Math.round(scale * 100)}%
+                            </span>
+                            <button 
+                                onClick={() => {
+                                    setScale(prev => Math.min(4, prev + 0.5));
+                                }}
+                                className="text-white text-xs font-bold hover:text-stone-300 px-2 py-1"
+                            >
+                                🔍+ 放大
+                            </button>
+                            <button 
+                                onClick={() => {
+                                    setScale(1);
+                                    setPosition({ x: 0, y: 0 });
+                                }}
+                                className="text-stone-400 hover:text-white text-xs font-medium border-l border-stone-700 pl-3 ml-1"
+                            >
+                                重設
+                            </button>
+                        </div>
+                        <p className="text-white/40 text-[10px] tracking-wider font-light">雙擊圖片可快速放大/重設，或雙指捏合縮放</p>
+                    </div>
+                </div>
+            );
+        };
+
+        // ═══════════════════════════════════════════════════════════════════════
         //  主 App 元件
         // ═══════════════════════════════════════════════════════════════════════
         const App = () => {
@@ -1151,6 +1338,11 @@
                             setDetailsId(newTicket.id);
                             setActiveTab('available');
 
+                            // 提示概略報告
+                            setTimeout(() => {
+                                alert(`🎉 票券已辨識成功並同步雲端！\n\n店家：${newTicket.storeName || '未辨識出'}\n品項：${newTicket.itemName || '未辨識出'}\n到期日：${newTicket.isNoExpiry ? '∞ 無期限' : (newTicket.expiryDate || '未辨識出')}\n金額：${newTicket.price ? newTicket.price + ' 元' : '無'}`);
+                            }, 300);
+
                         } catch(err) {
                             console.error(err); setError('圖片處理失敗');
                         } finally {
@@ -1186,11 +1378,23 @@
                         setTickets(prev => prev.filter(t => t.id !== draftId));
                     } else {
                         syncTicketsToCloud(tickets); // 手動新增票券點儲存時自動同步
+                        const ticket = tickets.find(t => t.id === draftId);
+                        if (ticket) {
+                            setTimeout(() => {
+                                alert(`💾 手動新增票券成功！\n\n店家：${ticket.storeName || '未填寫'}\n品項：${ticket.itemName || '未填寫'}`);
+                            }, 300);
+                        }
                     }
                     setDraftId(null);
                 } else {
                     if (save) {
                         syncTicketsToCloud(tickets); // 編輯票券點儲存時自動同步
+                        const ticket = tickets.find(t => t.id === detailsId);
+                        if (ticket) {
+                            setTimeout(() => {
+                                alert(`💾 票券「${ticket.storeName || ''} - ${ticket.itemName || ''}」已成功儲存並同步雲端！`);
+                            }, 300);
+                        }
                     }
                 }
                 setDetailsId(null);
@@ -1198,6 +1402,14 @@
 
             // ── 標記已使用（同步移動 Drive 截圖）────────────────────────────
             const handleToggleUsed = id => {
+                const ticket = tickets.find(t => t.id === id);
+                if (!ticket) return;
+
+                const actionText = ticket.isUsed ? '還原為「未使用（可使用）」' : '標記為「已使用」';
+                if (!window.confirm(`確定要將此票券 ${actionText} 嗎？\n\n【${ticket.storeName || '未指定'}】${ticket.itemName || '未指定'}`)) {
+                    return;
+                }
+
                 setRecentlyId(null);
                 setTickets(prev => {
                     const updated = prev.map(t => {
@@ -1215,14 +1427,24 @@
                         };
                     });
                     syncTicketsToCloud(updated); // 標記已使用時自動同步
+                    
+                    setTimeout(() => {
+                        alert(`✅ 票券已成功${actionText}並同步雲端！`);
+                    }, 300);
+
                     return updated;
                 });
             };
 
             // ── 刪除票券（同步刪除 Drive 截圖）──────────────────────────────
             const deleteTicket = id => {
-                if (!window.confirm('確定要刪除這張票券嗎？')) return;
                 const ticket = tickets.find(t => t.id === id);
+                if (!ticket) return;
+                
+                if (!window.confirm(`確定要刪除此票券嗎？刪除後將無法復原！\n\n【${ticket.storeName || '未指定'}】${ticket.itemName || '未指定'}`)) {
+                    return;
+                }
+
                 if (ticket?.driveFileId && isDriveReady) {
                     deleteImageFromDrive(gasUrl, ticket.driveFileId).catch(err =>
                         console.error('Drive delete error:', err)
@@ -1236,6 +1458,10 @@
                 });
                 setDetailsId(null);
                 if (id === draftId) setDraftId(null);
+
+                setTimeout(() => {
+                    alert(`🗑️ 票券「${ticket.storeName || ''} - ${ticket.itemName || ''}」已成功刪除並同步雲端！`);
+                }, 300);
             };
 
             const handleDeleteAllClick = () => { if (activeTab === 'available') return; setShowDelAll(true); };
@@ -1429,15 +1655,12 @@
                                 className="fixed inset-0 z-[100] flex items-center justify-center bg-stone-900/95 backdrop-blur-sm p-4 animate-in fade-in duration-200 cursor-pointer"
                                 onClick={() => setIsRedeemZoomed(false)}
                             >
-                                <button className="absolute top-6 right-6 text-white/70 hover:text-white p-2"><LucideX size={32}/></button>
-                                <img 
-                                    src={redeemTicket.imageUrl} 
-                                    alt="Zoomed Barcode" 
-                                    className="max-w-full max-h-[80vh] object-contain shadow-2xl rounded-sm select-none"
-                                    onClick={e => e.stopPropagation()}
-                                />
-                                <div className="absolute bottom-10 left-0 w-full text-center pointer-events-none">
-                                    <p className="text-white/50 text-xs tracking-widest font-light">點擊任意處關閉</p>
+                                <button className="absolute top-6 right-6 text-white/70 hover:text-white p-2 z-[110]"><LucideX size={32}/></button>
+                                <div className="w-full h-[70vh] flex items-center justify-center" onClick={e => e.stopPropagation()}>
+                                    <ZoomableImage src={redeemTicket.imageUrl} alt="Zoomed Barcode" className="max-w-full max-h-[70vh] object-contain shadow-2xl rounded-sm"/>
+                                </div>
+                                <div className="absolute bottom-6 left-0 w-full text-center pointer-events-none z-[110]">
+                                    <p className="text-white/50 text-xs tracking-widest font-light">點擊半透明背景可關閉視窗</p>
                                 </div>
                             </div>
                         )}
@@ -1574,9 +1797,11 @@
                     {/* ══ Modal：全螢幕票券檢視 ══════════════════════════════════ */}
                     {scanTicket && (
                         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-stone-900/95 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={handleCloseScan}>
-                            <button className="absolute top-6 right-6 text-white/70 hover:text-white p-2"><LucideX size={32}/></button>
+                            <button className="absolute top-6 right-6 text-white/70 hover:text-white p-2 z-[70]"><LucideX size={32}/></button>
                             {scanTicket.imageUrl
-                                ? <img src={scanTicket.imageUrl} alt="Scan View" className="max-w-full max-h-[80vh] object-contain shadow-2xl rounded-sm" onClick={e => e.stopPropagation()}/>
+                                ? <div className="w-full h-[70vh] flex items-center justify-center" onClick={e => e.stopPropagation()}>
+                                      <ZoomableImage src={scanTicket.imageUrl} alt="Scan View" className="max-w-full max-h-[70vh] object-contain shadow-2xl rounded-sm"/>
+                                  </div>
                                 : <div className="bg-white p-10 rounded-2xl flex flex-col items-center justify-center text-center max-w-xs shadow-2xl" onClick={e => e.stopPropagation()}>
                                     <div className="w-20 h-20 bg-stone-100 rounded-full flex items-center justify-center mb-6"><LucideAppWindow size={40} className="text-stone-400"/></div>
                                     <h3 className="text-lg font-bold text-stone-800 mb-2">{scanTicket.itemName || '提醒事項'}</h3>
@@ -1584,8 +1809,8 @@
                                     <p className="text-xs text-stone-400">{scanTicket.storeName}</p>
                                   </div>
                             }
-                            <div className="absolute bottom-10 left-0 w-full text-center pointer-events-none">
-                                <p className="text-white/50 text-xs tracking-widest font-light">點擊任意處關閉</p>
+                            <div className="absolute bottom-6 left-0 w-full text-center pointer-events-none z-[70]">
+                                <p className="text-white/50 text-xs tracking-widest font-light">點擊半透明背景可關閉視窗</p>
                             </div>
                         </div>
                     )}
