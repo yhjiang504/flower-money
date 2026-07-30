@@ -1443,7 +1443,7 @@
                 });
             };
 
-            // ── 刪除票券（同步刪除 Drive 截圖）──────────────────────────────
+            // ── 刪除票券（保留 Drive 上的圖片備份，不執行實體刪除）──────────────────────────────
             const deleteTicket = id => {
                 const ticket = tickets.find(t => t.id === id);
                 if (!ticket) return;
@@ -1452,11 +1452,7 @@
                     return;
                 }
 
-                if (ticket?.driveFileId && isDriveReady) {
-                    deleteImageFromDrive(gasUrl, ticket.driveFileId).catch(err =>
-                        console.error('Drive delete error:', err)
-                    );
-                }
+                // 🌸 V3.7.5 修改：保留雲端硬碟的圖片作為備份，不再呼叫 deleteImageFromDrive 🌸
                 setRecentlyId(null);
                 setTickets(prev => {
                     const updated = prev.filter(t => t.id !== id);
@@ -1473,10 +1469,14 @@
 
             const handleDeleteAllClick = () => { if (activeTab === 'available') return; setShowDelAll(true); };
             const confirmDeleteAll = () => {
+                let updated;
                 setTickets(prev => {
-                    if (activeTab === 'used')    return prev.filter(t => !t.isUsed);
-                    if (activeTab === 'expired') return prev.filter(t => !checkIsExpired(t.expiryDate, t.isNoExpiry) || t.isUsed);
-                    return prev;
+                    if (activeTab === 'used')    updated = prev.filter(t => !t.isUsed);
+                    else if (activeTab === 'expired') updated = prev.filter(t => !checkIsExpired(t.expiryDate, t.isNoExpiry) || t.isUsed);
+                    else updated = prev;
+                    
+                    syncTicketsToCloud(updated); // 🌸 V3.7.5：修復一鍵清空漏掉同步的 Bug 🌸
+                    return updated;
                 });
                 setRecentlyId(null); setShowDelAll(false);
             };
